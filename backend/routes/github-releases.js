@@ -375,29 +375,39 @@ router.post('/upload-pdf',
 router.get('/pdfs', asyncHandler(async (req, res) => {
     const { topic_id } = req.query;
 
-    let query = supabase
-        .from('topic_books')
-        .select('*')
-        .eq('is_active', true)
-        .order('display_order');
+    try {
+        let query = supabase
+            .from('topic_books')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order');
 
-    if (topic_id) {
-        query = query.eq('topic_id', topic_id);
+        if (topic_id) {
+            query = query.eq('topic_id', topic_id);
+        }
+
+        const { data: books, error } = await query;
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            count: books.length,
+            books: books.map(book => ({
+                ...book,
+                file_size_mb: (book.file_size_bytes / (1024 * 1024)).toFixed(2),
+                is_github_release: book.storage_type === 'github_release'
+            }))
+        });
+    } catch (error) {
+        console.error('[/api/github-releases/pdfs] Supabase error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to fetch books',
+            details: error.message,
+            code: error.code
+        });
     }
-
-    const { data: books, error } = await query;
-
-    if (error) throw error;
-
-    res.json({
-        success: true,
-        count: books.length,
-        books: books.map(book => ({
-            ...book,
-            file_size_mb: (book.file_size_bytes / (1024 * 1024)).toFixed(2),
-            is_github_release: book.storage_type === 'github_release'
-        }))
-    });
 }));
 
 /**
@@ -691,26 +701,36 @@ router.delete('/pdf/:id',
  * Public endpoint
  */
 router.get('/stats', asyncHandler(async (req, res) => {
-    const { data: books, error } = await supabase
-        .from('topic_books')
-        .select('file_size_bytes, storage_type');
+    try {
+        const { data: books, error } = await supabase
+            .from('topic_books')
+            .select('file_size_bytes, storage_type');
 
-    if (error) throw error;
+        if (error) throw error;
 
-    const stats = {
-        total_pdfs: books.length,
-        github_releases: books.filter(b => b.storage_type === 'github_release').length,
-        supabase_storage: books.filter(b => b.storage_type !== 'github_release').length,
-        total_size_bytes: books.reduce((sum, b) => sum + (b.file_size_bytes || 0), 0),
-        total_size_gb: 0
-    };
+        const stats = {
+            total_pdfs: books.length,
+            github_releases: books.filter(b => b.storage_type === 'github_release').length,
+            supabase_storage: books.filter(b => b.storage_type !== 'github_release').length,
+            total_size_bytes: books.reduce((sum, b) => sum + (b.file_size_bytes || 0), 0),
+            total_size_gb: 0
+        };
 
-    stats.total_size_gb = (stats.total_size_bytes / (1024 * 1024 * 1024)).toFixed(2);
+        stats.total_size_gb = (stats.total_size_bytes / (1024 * 1024 * 1024)).toFixed(2);
 
-    res.json({
-        success: true,
-        stats
-    });
+        res.json({
+            success: true,
+            stats
+        });
+    } catch (error) {
+        console.error('[/api/github-releases/stats] Supabase error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to fetch stats',
+            details: error.message,
+            code: error.code
+        });
+    }
 }));
 
 module.exports = router;

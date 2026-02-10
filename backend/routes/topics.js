@@ -12,18 +12,27 @@ const { asyncHandler } = require('../middleware/errorHandler');
  * Get all themes
  */
 router.get('/themes', asyncHandler(async (req, res) => {
-    const { data: themes, error } = await supabase
-        .from('themes')
-        .select('*')
-        .eq('is_active', true)
-        .order('display_order');
+    try {
+        const { data: themes, error } = await supabase
+            .from('themes')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order');
 
-    if (error) throw error;
+        if (error) throw error;
 
-    res.json({
-        themes,
-        count: themes.length
-    });
+        res.json({
+            themes,
+            count: themes.length
+        });
+    } catch (error) {
+        console.error('[/api/topics/themes] Supabase error:', error);
+        return res.status(500).json({
+            error: 'Failed to fetch themes',
+            details: error.message,
+            code: error.code
+        });
+    }
 }));
 
 /**
