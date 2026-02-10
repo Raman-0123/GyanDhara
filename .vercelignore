@@ -1,0 +1,11 @@
+# Large files and folders
+backend/pdfs/**
+backend/uploads/**
+node_modules
+*.log
+.env
+.env.local
+
+# Development files
+.git
+.DS_Store

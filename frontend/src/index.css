@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Lesson content styling */
+article p {
+    margin-bottom: 2rem;
+    line-height: 1.8;
+    font-size: 1.125rem;
+    text-align: justify;
+}
+
+article h2 {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    font-size: 1.875rem;
+    font-weight: 700;
+}
+
+article .author {
+    font-size: 0.95rem;
+    color: #6b7280;
+    font-style: italic;
+    margin-bottom: 2rem;
+}
+
+@layer base {
+    body {
+        @apply font-sans antialiased;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        @apply font-bold;
+    }
+}
+
+@layer components {
+    .btn-primary {
+        @apply bg-gradient-to-r from-primary-600 to-purple-600 hover:from-primary-700 hover:to-purple-700 dark:from-blue-600 dark:to-purple-600 dark:hover:from-blue-500 dark:hover:to-purple-500 text-white font-bold py-3 px-8 rounded-lg transition-all duration-300 shadow-lg hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5;
+    }
+
+    .btn-secondary {
+        @apply bg-gradient-to-r from-secondary-500 to-pink-500 hover:from-secondary-600 hover:to-pink-600 dark:from-purple-600 dark:to-pink-600 dark:hover:from-purple-500 dark:hover:to-pink-500 text-white font-bold py-3 px-8 rounded-lg transition-all duration-300 shadow-lg hover:shadow-2xl transform hover:-translate-y-0.5;
+    }
+
+    .card {
+        @apply bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 hover:shadow-2xl transition-all duration-300 border border-transparent dark:border-gray-700;
+    }
+
+    .input-field {
+        @apply w-full p-4 border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-4 focus:ring-primary-400 dark:focus:ring-blue-500 focus:border-primary-500 dark:focus:border-blue-500 outline-none transition-all duration-200 placeholder-gray-400 dark:placeholder-gray-500;
+    }
+
+    .badge {
+        @apply inline-block px-3 py-1 text-xs font-bold rounded-full shadow-sm;
+    }
+}
+
+/* Dark mode base styles */
+.dark {
+    @apply bg-gray-900 text-white;
+}
+
+.dark body {
+    @apply bg-gray-900;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 12px;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-gradient-to-b from-primary-400 to-purple-500 dark:from-blue-600 dark:to-purple-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    @apply from-primary-600 to-purple-700 dark:from-blue-500 dark:to-purple-500;
+}
+
+/* Hindi font support */
+.hindi-text {
+    font-family: 'Noto Sans Devanagari', sans-serif;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0px);
+    }
+
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+.animate-slide-up {
+    animation: slideUp 0.6s ease-out;
+}
+
+.animate-shimmer {
+    animation: shimmer 3s infinite;
+    background: linear-gradient(to right, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+    background-size: 1000px 100%;
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+/* Selection colors */
+::selection {
+    @apply bg-primary-500 dark:bg-blue-500 text-white;
+}
+
+::-moz-selection {
+    @apply bg-primary-500 dark:bg-blue-500 text-white;
+}

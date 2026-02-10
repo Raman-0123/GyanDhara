@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Topic - GyanDhara</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 16px;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .success {
+            background: #48bb78;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error {
+            background: #f56565;
+            color: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .hint {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        .example-box {
+            background: #f7fafc;
+            border-left: 4px solid #667eea;
+            padding: 16px;
+            margin-bottom: 24px;
+            border-radius: 4px;
+        }
+
+        .example-box h3 {
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .example-box ul {
+            margin-left: 20px;
+            color: #4a5568;
+        }
+
+        .example-box li {
+            margin-bottom: 4px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #edf2f7;
+            color: #2d3748;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .badge.easy {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge.medium {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .badge.hard {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>➕ Create New Topic</h1>
+            <p class="subtitle">Create topics under any theme, then upload books to them</p>
+
+            <div id="successMessage" class="success"></div>
+            <div id="errorMessage" class="error"></div>
+
+            <div class="example-box">
+                <h3>📚 Example Topics to Create:</h3>
+                <ul>
+                    <li><strong>Education:</strong> "Competitive Exams", "Study Skills", "Career Guidance"</li>
+                    <li><strong>History:</strong> "Ancient India", "Medieval Period", "Freedom Struggle"</li>
+                    <li><strong>Science:</strong> "Physics Basics", "Chemistry Fundamentals", "Biology"</li>
+                    <li><strong>Motivation:</strong> "Success Stories", "Life Lessons", "Inspirational Quotes"</li>
+                </ul>
+            </div>
+
+            <form id="topicForm">
+                <div class="form-group">
+                    <label for="theme">Theme *</label>
+                    <select id="theme" required>
+                        <option value="">-- Select Theme --</option>
+                    </select>
+                    <div class="hint">Choose which theme this topic belongs to</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="title">Topic Title *</label>
+                    <input type="text" id="title" placeholder="e.g., Competitive Exam Preparation" required />
+                    <div class="hint">Clear, descriptive title for this topic</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="summary">Summary/Description *</label>
+                    <textarea id="summary" placeholder="Brief description of what this topic covers..."
+                        required></textarea>
+                    <div class="hint">2-3 sentences explaining this topic</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="difficulty">Difficulty Level *</label>
+                    <select id="difficulty" required>
+                        <option value="easy">🟢 Easy - Beginner friendly</option>
+                        <option value="medium" selected>🟡 Medium - Intermediate</option>
+                        <option value="hard">🔴 Hard - Advanced</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="language">Language</label>
+                    <select id="language">
+                        <option value="pa" selected>Punjabi (ਪੰਜਾਬੀ)</option>
+                        <option value="en">English</option>
+                        <option value="hi">Hindi (हिंदी)</option>
+                        <option value="mix">Mixed</option>
+                    </select>
+                    <div class="hint">Language code will be stored (pa/en/hi/mix)</div>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    ✨ Create Topic
+                </button>
+            </form>
+
+            <div style="margin-top: 24px; padding: 16px; background: #edf2f7; border-radius: 8px;">
+                <strong>📝 Next Steps:</strong>
+                <ol style="margin-left: 20px; margin-top: 8px; color: #4a5568;">
+                    <li>Create topic here</li>
+                    <li>Go to <a href="upload-book.html" style="color: #667eea;">upload-book.html</a></li>
+                    <li>Upload books to your new topic!</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000';
+
+        // Load themes on page load
+        async function loadThemes() {
+            try {
+                const response = await fetch(`${API_URL}/api/topics/themes`);
+                const data = await response.json();
+
+                const themeSelect = document.getElementById('theme');
+                themeSelect.innerHTML = '<option value="">-- Select Theme --</option>';
+
+                data.themes.forEach(theme => {
+                    const option = document.createElement('option');
+                    option.value = theme.id;
+                    option.textContent = `${theme.icon || '📚'} ${theme.name}`;
+                    themeSelect.appendChild(option);
+                });
+            } catch (error) {
+                showError('Failed to load themes. Is backend running?');
+                console.error(error);
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('topicForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Creating...';
+
+            const formData = {
+                theme_id: document.getElementById('theme').value,
+                title: document.getElementById('title').value,
+                summary: document.getElementById('summary').value,
+                difficulty_level: document.getElementById('difficulty').value,
+                detected_language: document.getElementById('language').value,
+                is_verified: true
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/api/topics`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showSuccess(`✅ Topic "${formData.title}" created successfully! Topic ID: ${data.topic.id}`);
+                    document.getElementById('topicForm').reset();
+
+                    // Auto-redirect after 2 seconds
+                    setTimeout(() => {
+                        if (confirm('Topic created! Upload books now?')) {
+                            window.location.href = 'upload-book.html';
+                        }
+                    }, 2000);
+                } else {
+                    showError(data.message || 'Failed to create topic');
+                }
+            } catch (error) {
+                showError('Network error. Check if backend is running on port 3000.');
+                console.error(error);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '✨ Create Topic';
+            }
+        });
+
+        function showSuccess(message) {
+            const el = document.getElementById('successMessage');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 5000);
+        }
+
+        function showError(message) {
+            const el = document.getElementById('errorMessage');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 5000);
+        }
+
+        // Load themes when page loads
+        loadThemes();
+    </script>
+</body>
+
+</html>
