@@ -178,6 +178,11 @@ app.get('/api/diag/supabase', async (req, res) => {
     }
 });
 
+// Very small sanity endpoint to confirm function boots
+app.get('/api/diag/ping', (_req, res) => {
+    res.json({ ok: true, timestamp: Date.now(), vercel: Boolean(process.env.VERCEL) });
+});
+
 // API Routes
 app.use('/api/topics', topicRoutes);
 app.use('/api/user', userRoutes);
