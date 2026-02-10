@@ -24,7 +24,7 @@ export default function TopicList() {
     const loadTheme = async () => {
         try {
             const response = await api.get('/api/topics/themes');
-            const foundTheme = response.data.themes?.find(t => t.id === parseInt(themeId));
+            const foundTheme = response.data.themes?.find(t => t.id === themeId);
             setTheme(foundTheme);
         } catch (error) {
             console.error(error);

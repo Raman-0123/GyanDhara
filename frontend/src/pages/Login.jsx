@@ -1,64 +1,90 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
 import { supabase } from '../services/supabaseClient';
 import { LogIn, Mail, Lock, BookOpen } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLowerCase();
 
 export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const { user } = useAuth();
+
+    useEffect(() => {
+        if (!user) return;
+
+        // Redirect based on role after session loads
+        if (user.role === 'admin') {
+            navigate('/admin');
+        } else {
+            navigate('/dashboard');
+        }
+    }, [user, navigate]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
+        if (loading) return;
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const pwd = password.trim();
+        if (!normalizedEmail || !pwd) {
+            toast.error('Please enter email and password');
+            return;
+        }
+
         setLoading(true);
+        console.info('[Login] Submitting login', { email: normalizedEmail });
 
         try {
             const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
+                email: normalizedEmail,
+                password: pwd,
             });
 
+            console.info('[Login] Supabase response', { session: !!data?.session, user: data?.user?.id });
             if (error) throw error;
+            if (!data?.session || !data?.user) {
+                throw new Error('Login failed: no session returned');
+            }
 
             // Store token and user data temporarily
             localStorage.setItem('token', data.session.access_token);
+            console.info('[Login] Token stored length', data.session.access_token?.length);
 
-            // Fetch user profile to get role directly from Supabase table
-            const { data: profile, error: profileError } = await supabase
-                .from('users')
-                .select('id, email, name, role')
-                .eq('id', data.user.id)
-                .single();
-
-            if (profileError) throw profileError;
-
-            const userWithRole = {
+            // Avoid calling public.users directly from the browser (can be blocked by RLS and return noisy 406s).
+            // We'll route using admin email + metadata, and AuthContext will hydrate role/profile after login.
+            const derivedRole = data.user.user_metadata?.role
+                || (normalizedEmail === ADMIN_EMAIL ? 'admin' : 'student');
+            const userForStorage = {
                 ...data.user,
-                ...profile,
-                role: profile?.role || 'student'
+                name: data.user.user_metadata?.name || data.user.email,
+                role: derivedRole,
+                is_active: true,
             };
 
-            localStorage.setItem('user', JSON.stringify(userWithRole));
+            console.info('[Login] Derived role', derivedRole);
+            localStorage.setItem('user', JSON.stringify(userForStorage));
 
             toast.success('Welcome back! 🎉');
 
             // Route by role
-            if (userWithRole.role === 'admin') {
+            if (derivedRole === 'admin') {
+                console.info('[Login] Navigating to /admin');
                 navigate('/admin');
             } else {
+                console.info('[Login] Navigating to /dashboard');
                 navigate('/dashboard');
             }
         } catch (error) {
             console.error('Login error:', error);
-            toast.error(error.message || 'Failed to login');
+            const msg = error?.name === 'AbortError'
+                ? 'Login request timed out. Check Network tab / adblock / VPN, then retry.'
+                : (error.message || 'Failed to login');
+            toast.error(msg);
         } finally {
             setLoading(false);
         }
@@ -152,12 +178,6 @@ export default function Login() {
                     </p>
                 </div>
 
-                {/* Back to Home */}
-                <div className="text-center mt-6">
-                    <Link to="/" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
-                        ← Back to Home
-                    </Link>
-                </div>
             </div>
         </div>
     );

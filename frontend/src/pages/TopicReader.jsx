@@ -41,11 +41,20 @@ const TopicReader = () => {
     const [ratingComment, setRatingComment] = useState('');
     const [ratings, setRatings] = useState([]);
 
+    const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+
     const resolveAssetUrl = (url) => {
         if (!url) return '';
         if (url.startsWith('http://') || url.startsWith('https://')) return url;
-        const baseUrl = import.meta.env.VITE_API_URL || '';
-        return `${baseUrl}${url}`;
+        return `${apiBaseUrl}${url}`;
+    };
+
+    const getBookPdfUrl = (book) => {
+        if (!book) return '';
+        if (book.storage_type === 'github_release' && book.github_asset_id) {
+            return `${apiBaseUrl}/api/github-releases/asset/${book.github_asset_id}`;
+        }
+        return resolveAssetUrl(book.pdf_url);
     };
 
     useEffect(() => {
@@ -546,7 +555,7 @@ const TopicReader = () => {
                                 </div>
                                 <div className="w-full h-[800px] border-4 border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
                                     <iframe
-                                        src={resolveAssetUrl(books[currentBookIndex].pdf_url)}
+                                        src={getBookPdfUrl(books[currentBookIndex])}
                                         className="w-full h-full"
                                         title="PDF Viewer"
                                     />
@@ -597,7 +606,7 @@ const TopicReader = () => {
 
                 <PDFViewer
                     pdfUrl={books.length > 0
-                        ? resolveAssetUrl(books[currentBookIndex].pdf_url)
+                        ? getBookPdfUrl(books[currentBookIndex])
                         : resolveAssetUrl(topic.pdf_url)
                     }
                     isOpen={showPDFModal}

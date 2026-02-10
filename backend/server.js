@@ -105,13 +105,15 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
+// Rate limiting (production only)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
     message: 'Too many requests from this IP, please try again later.'
 });
-app.use('/api/', limiter);
+if (process.env.NODE_ENV === 'production') {
+    app.use('/api/', limiter);
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {

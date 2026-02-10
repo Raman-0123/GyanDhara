@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
@@ -7,12 +7,17 @@ import { useAuth } from '../context/AuthContext';
 export default function AdminPanel() {
     const navigate = useNavigate();
     const { user, isAdmin, loading: authLoading } = useAuth();
-    const [topics, setTopics] = useState([]);
+    const [themes, setThemes] = useState([]);
+    const [books, setBooks] = useState([]);
+    const [booksLoading, setBooksLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [themesError, setThemesError] = useState('');
+    const [booksError, setBooksError] = useState('');
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadStats, setUploadStats] = useState(null);
     const [formData, setFormData] = useState({
-        topic_id: '',
+        theme_id: '',
         title: '',
         description: '',
         book_number: 1,
@@ -25,31 +30,58 @@ export default function AdminPanel() {
     const [pdfFile, setPdfFile] = useState(null);
     const [coverFile, setCoverFile] = useState(null);
     const [fileSize, setFileSize] = useState(0);
+    const [selectedBook, setSelectedBook] = useState(null);
+    const [editForm, setEditForm] = useState({
+        title: '',
+        description: '',
+        book_number: 1,
+        author: '',
+        publisher: '',
+        publication_year: '',
+        isbn: '',
+        display_order: 1,
+        is_active: true
+    });
+    const [editPdfFile, setEditPdfFile] = useState(null);
+    const [editCoverFile, setEditCoverFile] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const hasLoadedRef = useRef(false);
+    const [migrating, setMigrating] = useState(false);
 
-    // Check if user is admin
     useEffect(() => {
-        if (!authLoading && (!user || !isAdmin)) {
-            toast.error('Access denied: Admin only');
-            navigate('/dashboard');
-        } else if (!authLoading && isAdmin) {
-            // Fetch data only after auth check passes
-            fetchTopics();
-            fetchUploadStats();
+        if (authLoading) return;
+        if (!user) {
+            hasLoadedRef.current = false;
+            navigate('/login');
+            return;
         }
+        if (!isAdmin) {
+            hasLoadedRef.current = false;
+            navigate('/dashboard');
+            return;
+        }
+        if (hasLoadedRef.current) return;
+        hasLoadedRef.current = true;
+        // Fetch data only after auth check passes
+        fetchThemes();
+        fetchUploadStats();
+        fetchBooks();
     }, [user, isAdmin, authLoading, navigate]);
 
-    // Fetch topics for the dropdown
-    // useEffect(() => {
-    //     fetchTopics();
-    //     fetchUploadStats();
-    // }, []);
+    // Data is loaded after admin auth check
 
-    const fetchTopics = async () => {
+    const fetchThemes = async () => {
         try {
-            const response = await api.get('/api/topics');
-            setTopics(response.data.topics || response.data);
+            setThemesError('');
+            const response = await api.get('/api/topics/themes');
+            setThemes(response.data.themes || []);
         } catch (error) {
-            toast.error('Failed to fetch topics');
+            const message = error.response?.data?.message
+                || error.response?.data?.error
+                || error.message
+                || 'Failed to fetch themes';
+            if (!themesError) toast.error(message);
+            setThemesError(message);
             console.error(error);
         }
     };
@@ -60,6 +92,25 @@ export default function AdminPanel() {
             setUploadStats(response.data.stats);
         } catch (error) {
             console.error('Failed to fetch stats:', error);
+        }
+    };
+
+    const fetchBooks = async () => {
+        try {
+            setBooksError('');
+            setBooksLoading(true);
+            const response = await api.get('/api/github-releases/pdfs');
+            setBooks(response.data.books || []);
+        } catch (error) {
+            console.error('Failed to fetch books:', error);
+            const message = error.response?.data?.message
+                || error.response?.data?.error
+                || error.message
+                || 'Failed to load books';
+            if (!booksError) toast.error(message);
+            setBooksError(message);
+        } finally {
+            setBooksLoading(false);
         }
     };
 
@@ -78,9 +129,7 @@ export default function AdminPanel() {
             setFileSize(sizeMB);
 
             // Validate file size
-            if (sizeMB < 50) {
-                toast.error(`PDF file size (${sizeMB.toFixed(2)}MB) is less than 50MB minimum`);
-            } else if (sizeMB > 200) {
+            if (sizeMB > 200) {
                 toast.error(`PDF file size (${sizeMB.toFixed(2)}MB) exceeds 200MB maximum`);
             }
         }
@@ -102,13 +151,13 @@ export default function AdminPanel() {
         e.preventDefault();
 
         // Validation
-        if (!formData.topic_id || !formData.title || !pdfFile) {
-            toast.error('Please fill in all required fields (Topic, Title, PDF)');
+        if (!formData.theme_id || !formData.title || !pdfFile) {
+            toast.error('Please fill in all required fields (Theme, Title, PDF)');
             return;
         }
 
-        if (fileSize < 50 || fileSize > 200) {
-            toast.error('PDF file size must be between 50MB and 200MB');
+        if (fileSize > 200) {
+            toast.error('PDF file size must be 200MB or less');
             return;
         }
 
@@ -126,11 +175,16 @@ export default function AdminPanel() {
                 data.append('cover_image', coverFile);
             }
 
+            console.info('[AdminUpload] POST /api/github-releases/upload-pdf', {
+                apiBaseURL: api.defaults?.baseURL,
+                theme_id: formData.theme_id,
+                title: formData.title,
+                pdf: pdfFile ? { name: pdfFile.name, size: pdfFile.size, type: pdfFile.type } : null,
+                cover: coverFile ? { name: coverFile.name, size: coverFile.size, type: coverFile.type } : null
+            });
+
             // Upload to GitHub Releases API
-            const response = await api.post('/github-releases/upload-pdf', data, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                },
+            const response = await api.post('/api/github-releases/upload-pdf', data, {
                 timeout: 300000 // 5 minute timeout for large files
             });
 
@@ -138,7 +192,7 @@ export default function AdminPanel() {
 
             // Reset form
             setFormData({
-                topic_id: '',
+                theme_id: '',
                 title: '',
                 description: '',
                 book_number: 1,
@@ -156,16 +210,135 @@ export default function AdminPanel() {
 
             // Refresh stats
             fetchUploadStats();
+            fetchBooks();
 
             // Show success details
             console.log('Upload response:', response.data);
 
         } catch (error) {
-            console.error('Upload error:', error);
-            const errorMsg = error.response?.data?.error || error.message || 'Upload failed';
+            console.error('[AdminUpload] error', {
+                message: error?.message,
+                status: error?.response?.status,
+                data: error?.response?.data
+            });
+            const errorMsg = error?.response?.data?.error || error?.message || 'Upload failed';
             toast.error(errorMsg, { id: uploadToast });
         } finally {
             setUploading(false);
+        }
+    };
+
+    const filteredBooks = useMemo(() => {
+        const query = searchTerm.trim().toLowerCase();
+        if (!query) return books;
+        return books.filter((book) => {
+            return (
+                book.title?.toLowerCase().includes(query) ||
+                book.author?.toLowerCase().includes(query) ||
+                book.publisher?.toLowerCase().includes(query) ||
+                book.isbn?.toLowerCase().includes(query)
+            );
+        });
+    }, [books, searchTerm]);
+
+    const openEditModal = (book) => {
+        setSelectedBook(book);
+        setEditForm({
+            title: book.title || '',
+            description: book.description || '',
+            book_number: book.book_number || 1,
+            author: book.author || '',
+            publisher: book.publisher || '',
+            publication_year: book.publication_year || '',
+            isbn: book.isbn || '',
+            display_order: book.display_order || 1,
+            is_active: Boolean(book.is_active)
+        });
+        setEditPdfFile(null);
+        setEditCoverFile(null);
+    };
+
+    const closeEditModal = () => {
+        setSelectedBook(null);
+        setEditPdfFile(null);
+        setEditCoverFile(null);
+    };
+
+    const handleEditChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setEditForm((prev) => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
+    };
+
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        if (!selectedBook) return;
+
+        try {
+            setSaving(true);
+            const formPayload = new FormData();
+            Object.entries(editForm).forEach(([key, value]) => {
+                formPayload.append(key, value);
+            });
+            if (editPdfFile) formPayload.append('pdf', editPdfFile);
+            if (editCoverFile) formPayload.append('cover_image', editCoverFile);
+
+            await api.put(`/api/github-releases/pdf/${selectedBook.id}`, formPayload, {
+                timeout: 300000
+            });
+
+            toast.success('Book updated');
+            closeEditModal();
+            fetchBooks();
+        } catch (error) {
+            console.error('Update failed:', error);
+            toast.error(error.response?.data?.error || 'Failed to update book');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleToggleActive = async (book) => {
+        try {
+            const formPayload = new FormData();
+            formPayload.append('is_active', (!book.is_active).toString());
+            await api.put(`/api/github-releases/pdf/${book.id}`, formPayload);
+            fetchBooks();
+        } catch (error) {
+            console.error('Toggle failed:', error);
+            toast.error('Failed to update status');
+        }
+    };
+
+    const handleDelete = async (book) => {
+        if (!window.confirm(`Delete "${book.title}"? This cannot be undone.`)) return;
+        try {
+            await api.delete(`/api/github-releases/pdf/${book.id}`);
+            toast.success('Book deleted');
+            fetchBooks();
+            fetchUploadStats();
+        } catch (error) {
+            console.error('Delete failed:', error);
+            toast.error('Failed to delete book');
+        }
+    };
+
+    const handleMigrateAll = async () => {
+        if (!window.confirm('Migrate all non-GitHub PDFs to GitHub Releases?')) return;
+        try {
+            setMigrating(true);
+            const response = await api.post('/api/github-releases/migrate-all');
+            const { migrated, failed } = response.data;
+            toast.success(`Migration complete. Migrated: ${migrated}, Failed: ${failed}`);
+            fetchBooks();
+            fetchUploadStats();
+        } catch (error) {
+            console.error('Migration failed:', error);
+            toast.error(error.response?.data?.error || 'Migration failed');
+        } finally {
+            setMigrating(false);
         }
     };
 
@@ -210,25 +383,31 @@ export default function AdminPanel() {
 
                 {/* Upload Form */}
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Topic Selection */}
+                    {/* Theme Selection */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Topic / Category <span className="text-red-500">*</span>
+                            Theme / Category <span className="text-red-500">*</span>
                         </label>
                         <select
-                            name="topic_id"
-                            value={formData.topic_id}
+                            name="theme_id"
+                            value={formData.theme_id}
                             onChange={handleInputChange}
                             required
                             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                         >
-                            <option value="">Select a topic...</option>
-                            {topics.map(topic => (
-                                <option key={topic.id} value={topic.id}>
-                                    {topic.title || topic.name}
+                            <option value="">Select a theme...</option>
+                            {themes.map(theme => (
+                                <option key={theme.id} value={theme.id}>
+                                    {(theme.icon ? `${theme.icon} ` : '') + (theme.name || 'Untitled Theme')}
                                 </option>
                             ))}
                         </select>
+                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            PDFs uploaded here will be stored under the selected theme.
+                        </p>
+                        {themesError && (
+                            <p className="mt-2 text-xs text-red-500">{themesError}</p>
+                        )}
                     </div>
 
                     {/* Title */}
@@ -351,7 +530,7 @@ export default function AdminPanel() {
                     {/* PDF File Upload */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            PDF File (50MB - 200MB) <span className="text-red-500">*</span>
+                            PDF File (max 200MB) <span className="text-red-500">*</span>
                         </label>
                         <input
                             id="pdf-input"
@@ -362,9 +541,8 @@ export default function AdminPanel() {
                             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                         />
                         {fileSize > 0 && (
-                            <p className={`mt-2 text-sm ${fileSize >= 50 && fileSize <= 200 ? 'text-green-600' : 'text-red-600'}`}>
+                            <p className={`mt-2 text-sm ${fileSize <= 200 ? 'text-green-600' : 'text-red-600'}`}>
                                 File size: {fileSize.toFixed(2)} MB
-                                {fileSize < 50 && ' (Too small - minimum 50MB)'}
                                 {fileSize > 200 && ' (Too large - maximum 200MB)'}
                             </p>
                         )}
@@ -388,7 +566,7 @@ export default function AdminPanel() {
                     <div className="flex gap-4">
                         <button
                             type="submit"
-                            disabled={uploading || fileSize < 50 || fileSize > 200}
+                            disabled={uploading || fileSize > 200}
                             className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
                         >
                             {uploading ? (
@@ -420,10 +598,242 @@ export default function AdminPanel() {
                         <li>• PDFs stored permanently in GitHub Releases (up to 2GB per file)</li>
                         <li>• Metadata saved in Supabase database</li>
                         <li>• Files accessible via permanent download URLs</li>
-                        <li>• Automatic organization by topics/categories</li>
+                        <li>• Automatic organization by themes/categories</li>
                     </ul>
                 </div>
+
+                {/* Manage Books */}
+                <div className="mt-12">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Manage Books</h2>
+                        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Search by title, author, publisher, ISBN"
+                                className="w-full md:w-72 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleMigrateAll}
+                                disabled={migrating}
+                                className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                                {migrating ? 'Migrating...' : 'Migrate to GitHub'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {booksLoading ? (
+                        <div className="py-8 text-center text-gray-600 dark:text-gray-300">Loading books...</div>
+                    ) : (
+                        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left">Title</th>
+                                        <th className="px-4 py-3 text-left">Author</th>
+                                        <th className="px-4 py-3 text-left">Size</th>
+                                        <th className="px-4 py-3 text-left">Status</th>
+                                        <th className="px-4 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    {filteredBooks.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="5" className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                                No books found.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredBooks.map((book) => (
+                                            <tr key={book.id} className="bg-white dark:bg-gray-800">
+                                                <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                                                    {book.title}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                                    {book.author || '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                                    {book.file_size_bytes ? `${(book.file_size_bytes / (1024 * 1024)).toFixed(2)} MB` : '-'}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${book.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                        {book.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right space-x-2">
+                                                    <button
+                                                        onClick={() => openEditModal(book)}
+                                                        className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleToggleActive(book)}
+                                                        className="px-3 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600"
+                                                    >
+                                                        {book.is_active ? 'Disable' : 'Enable'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(book)}
+                                                        className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    {booksError && (
+                        <p className="mt-3 text-sm text-red-500">{booksError}</p>
+                    )}
+                </div>
             </div>
+
+            {selectedBook && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl p-6 overflow-y-auto max-h-[90vh]">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Edit Book</h3>
+                            <button onClick={closeEditModal} className="text-gray-500 hover:text-gray-800">✕</button>
+                        </div>
+                        <form onSubmit={handleEditSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
+                                <input
+                                    name="title"
+                                    value={editForm.title}
+                                    onChange={handleEditChange}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+                                <textarea
+                                    name="description"
+                                    value={editForm.description}
+                                    onChange={handleEditChange}
+                                    rows={3}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Book Number</label>
+                                    <input
+                                        type="number"
+                                        name="book_number"
+                                        value={editForm.book_number}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Display Order</label>
+                                    <input
+                                        type="number"
+                                        name="display_order"
+                                        value={editForm.display_order}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Publication Year</label>
+                                    <input
+                                        type="number"
+                                        name="publication_year"
+                                        value={editForm.publication_year}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Author</label>
+                                    <input
+                                        name="author"
+                                        value={editForm.author}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Publisher</label>
+                                    <input
+                                        name="publisher"
+                                        value={editForm.publisher}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">ISBN</label>
+                                    <input
+                                        name="isbn"
+                                        value={editForm.isbn}
+                                        onChange={handleEditChange}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Replace PDF (max 200MB)</label>
+                                    <input
+                                        type="file"
+                                        accept=".pdf,application/pdf"
+                                        onChange={(e) => setEditPdfFile(e.target.files[0] || null)}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Replace Cover (max 10MB)</label>
+                                    <input
+                                        type="file"
+                                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                                        onChange={(e) => setEditCoverFile(e.target.files[0] || null)}
+                                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    name="is_active"
+                                    checked={editForm.is_active}
+                                    onChange={handleEditChange}
+                                />
+                                <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={closeEditModal}
+                                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={saving}
+                                    className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {saving ? 'Saving...' : 'Save Changes'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

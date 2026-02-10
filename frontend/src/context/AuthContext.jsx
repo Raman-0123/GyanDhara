@@ -1,14 +1,10 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import api from '../services/api';
+import { supabase } from '../services/supabaseClient';
 
 const AuthContext = createContext(null);
 
-// Initialize Supabase client
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLowerCase();
+
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
@@ -22,67 +18,147 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const buildBaseUser = (authUser) => ({
+        ...authUser,
+        name: authUser?.user_metadata?.name || authUser?.email,
+        // UI-only role derivation; authorization happens on the backend.
+        role: authUser?.user_metadata?.role || (authUser?.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'student'),
+        is_active: true
+    });
+
     // Fetch user profile with role from database
     const fetchUserProfile = async (authUser) => {
         try {
+            console.info('[Auth] fetchUserProfile start', { userId: authUser?.id });
+            let profileError = null;
+            let profileData = null;
+
+            // First attempt: full columns (newer schema)
             const { data, error } = await supabase
                 .from('users')
-                .select('id, email, name, role')
+                .select('id, email, name, full_name, role, is_active')
                 .eq('id', authUser.id)
-                .single();
+                .limit(1);
 
-            if (error) throw error;
+            profileError = error;
+            profileData = Array.isArray(data) ? data[0] : null;
+
+            // Fallback for older schemas missing some columns
+            if (profileError?.code === '42703') {
+                const fallback = await supabase
+                    .from('users')
+                    .select('id, email, role, is_active')
+                    .eq('id', authUser.id)
+                    .limit(1);
+
+                profileError = fallback.error;
+                profileData = Array.isArray(fallback.data) ? fallback.data[0] : null;
+            }
+
+            if (profileError) throw profileError;
+
+            const safeProfile = profileData || {};
+
+            console.info('[Auth] fetchUserProfile done', {
+                userId: authUser?.id,
+                hasProfile: Boolean(profileData),
+                errorCode: profileError?.code
+            });
+
+            const derivedRole = safeProfile.role
+                || authUser?.user_metadata?.role
+                || (authUser?.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'student');
 
             return {
                 ...authUser,
-                ...data,
-                role: data?.role || 'student'
+                ...safeProfile,
+                name: safeProfile.name || safeProfile.full_name || authUser.user_metadata?.name || authUser.email,
+                role: derivedRole,
+                is_active: safeProfile.is_active ?? true
             };
         } catch (error) {
             console.error('Failed to fetch user profile from Supabase:', error);
-            return {
-                ...authUser,
-                role: 'student' // Default role
-            };
+            return buildBaseUser(authUser);
         }
     };
 
     useEffect(() => {
+        let cancelled = false;
+
+        const hydrateUser = async (authUser) => {
+            const timeoutMs = 8000;
+            try {
+                const result = await Promise.race([
+                    fetchUserProfile(authUser),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`fetchUserProfile timeout after ${timeoutMs}ms`)), timeoutMs)),
+                ]);
+
+                if (cancelled) return;
+                setUser(result);
+                localStorage.setItem('user', JSON.stringify(result));
+            } catch (err) {
+                console.error('[Auth] hydrateUser failed:', err);
+            }
+        };
+
         // Check for existing session
         const initAuth = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+            try {
+                console.info('[Auth] initAuth start');
+                const { data: { session }, error } = await supabase.auth.getSession();
+                if (error) throw error;
 
-            if (session) {
-                const userWithRole = await fetchUserProfile(session.user);
-                setUser(userWithRole);
-                localStorage.setItem('token', session.access_token);
-                localStorage.setItem('user', JSON.stringify(userWithRole));
-            } else {
-                // Clear localStorage if no session
+                if (session) {
+                    console.info('[Auth] session found', { userId: session.user?.id });
+                    const baseUser = buildBaseUser(session.user);
+                    setUser(baseUser);
+                    localStorage.setItem('token', session.access_token);
+                    localStorage.setItem('user', JSON.stringify(baseUser));
+
+                    // Hydrate role/profile in the background (don't block UI)
+                    hydrateUser(session.user);
+                } else {
+                    console.info('[Auth] no session, clearing storage');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                }
+            } catch (err) {
+                console.error('Auth init failed:', err);
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
+                setLoading(false);
+                return;
             }
-
             setLoading(false);
         };
 
         initAuth();
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.info('[Auth] onAuthStateChange', event, { hasSession: !!session });
             if (session) {
-                const userWithRole = await fetchUserProfile(session.user);
-                setUser(userWithRole);
+                const baseUser = buildBaseUser(session.user);
+                setUser(baseUser);
                 localStorage.setItem('token', session.access_token);
-                localStorage.setItem('user', JSON.stringify(userWithRole));
+                localStorage.setItem('user', JSON.stringify(baseUser));
+
+                // Hydrate role/profile in the background (don't block auth flow)
+                hydrateUser(session.user);
             } else {
                 setUser(null);
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
             }
+
+            // If a sign-in/out happens before initAuth completes, don't keep the UI stuck in "loading".
+            setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            cancelled = true;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const logout = async () => {

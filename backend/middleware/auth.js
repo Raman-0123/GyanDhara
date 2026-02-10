@@ -1,11 +1,12 @@
-const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 
-// Use service key to bypass RLS for authentication checks
+// Use service role key so we can validate Supabase JWTs server-side and read roles
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
+    process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_KEY
 );
+
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLowerCase();
 
 /**
  * Middleware to verify JWT token and authenticate user
@@ -14,7 +15,7 @@ const authenticateToken = async (req, res, next) => {
     try {
         console.log('\n🔐 [AUTH] Authenticating request to:', req.method, req.path);
         const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+        const token = authHeader && authHeader.split(' ')[1];
 
         if (!token) {
             console.log('❌ [AUTH] No token provided');
@@ -24,42 +25,104 @@ const authenticateToken = async (req, res, next) => {
             });
         }
 
-        console.log('🔑 [AUTH] Token received:', token.substring(0, 20) + '...');
+        console.log('🔑 [AUTH] Supabase JWT received:', token.substring(0, 20) + '...');
 
-        // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log('✅ [AUTH] Token decoded successfully');
-        console.log('👤 [AUTH] User ID from token:', decoded.userId);
-        console.log('📧 [AUTH] Email from token:', decoded.email);
-        console.log('🎭 [AUTH] Role from token:', decoded.role);
+        // Ask Supabase to validate the access token and return the user
+        const { data: authData, error: authError } = await supabase.auth.getUser(token);
 
-        // Fetch user from database
-        console.log('🔍 [AUTH] Fetching user from database...');
-        const { data: user, error } = await supabase
+        if (authError || !authData?.user) {
+            console.error('❌ [AUTH] Supabase validation failed:', authError?.message);
+            return res.status(401).json({
+                error: 'Unauthorized',
+                message: 'Invalid or expired token'
+            });
+        }
+
+        const authUser = authData.user;
+        console.log('✅ [AUTH] Supabase token valid for user:', authUser.email);
+
+        // Fetch role/profile from public.users; create a row if it doesn't exist.
+        let profile = null;
+        let profileError = null;
+
+        const profileResult = await supabase
             .from('users')
-            .select('id, email, full_name, role, is_active')
-            .eq('id', decoded.userId)
-            .single();
+            .select('id, email, name, full_name, role, is_active')
+            .eq('id', authUser.id)
+            .limit(1);
 
-        if (error) {
-            console.error('❌ [AUTH] Database error:', error);
-            return res.status(401).json({
-                error: 'Unauthorized',
-                message: 'Invalid or expired token'
+        profileError = profileResult.error;
+        profile = Array.isArray(profileResult.data) ? profileResult.data[0] : null;
+
+        // Fallback for older schemas missing some columns
+        if (profileError?.code === '42703') {
+            const fallback = await supabase
+                .from('users')
+                .select('id, email, full_name, role, is_active')
+                .eq('id', authUser.id)
+                .limit(1);
+
+            profileError = fallback.error;
+            profile = Array.isArray(fallback.data) ? fallback.data[0] : null;
+        }
+
+        if (profileError) {
+            console.error('❌ [AUTH] Database error:', profileError);
+            return res.status(500).json({
+                error: 'Internal Server Error',
+                message: 'Authentication failed while fetching profile'
             });
         }
 
-        if (!user) {
-            console.log('❌ [AUTH] User not found in database');
-            return res.status(401).json({
-                error: 'Unauthorized',
-                message: 'Invalid or expired token'
-            });
+        if (!profile) {
+            const displayName = authUser.user_metadata?.name || authUser.email || 'User';
+            const derivedRole = (authUser.email || '').toLowerCase() === ADMIN_EMAIL ? 'admin' : 'student';
+
+            console.warn('ℹ️  [AUTH] No public.users row found; creating one for', authUser.email);
+
+            const insertPayload = {
+                id: authUser.id,
+                email: authUser.email,
+                password_hash: 'SUPABASE_AUTH',
+                full_name: displayName,
+                role: derivedRole,
+                is_active: true,
+            };
+
+            const { data: inserted, error: insertError } = await supabase
+                .from('users')
+                .insert(insertPayload)
+                .select('id, email, name, full_name, role, is_active');
+
+            if (insertError?.code === '42703') {
+                // Older schema: omit "name" from select
+                const retry = await supabase
+                    .from('users')
+                    .insert(insertPayload)
+                    .select('id, email, full_name, role, is_active');
+
+                if (retry.error) {
+                    console.error('❌ [AUTH] Failed creating public.users row:', retry.error);
+                } else {
+                    profile = Array.isArray(retry.data) ? retry.data[0] : null;
+                }
+            } else if (insertError) {
+                console.error('❌ [AUTH] Failed creating public.users row:', insertError);
+            } else {
+                profile = Array.isArray(inserted) ? inserted[0] : null;
+            }
         }
 
-        console.log('✅ [AUTH] User found:', user.email, 'Role:', user.role);
+        const mergedUser = {
+            id: authUser.id,
+            email: authUser.email,
+            name: profile?.name || profile?.full_name || authUser.user_metadata?.name || authUser.email,
+            // Never trust user_metadata for authorization decisions.
+            role: profile?.role || ((authUser.email || '').toLowerCase() === ADMIN_EMAIL ? 'admin' : 'student'),
+            is_active: profile?.is_active ?? true,
+        };
 
-        if (!user.is_active) {
+        if (mergedUser.is_active === false) {
             console.log('❌ [AUTH] User account is inactive');
             return res.status(403).json({
                 error: 'Forbidden',
@@ -67,25 +130,10 @@ const authenticateToken = async (req, res, next) => {
             });
         }
 
-        // Attach user to request object
-        req.user = user;
-        console.log('✅ [AUTH] Authentication successful\n');
+        req.user = mergedUser;
+        console.log('✅ [AUTH] Authentication successful for', mergedUser.email, 'Role:', mergedUser.role, '\n');
         next();
     } catch (error) {
-        if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({
-                error: 'Unauthorized',
-                message: 'Token has expired'
-            });
-        }
-
-        if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({
-                error: 'Unauthorized',
-                message: 'Invalid token'
-            });
-        }
-
         console.error('Auth middleware error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
@@ -132,16 +180,22 @@ const optionalAuth = async (req, res, next) => {
         const token = authHeader && authHeader.split(' ')[1];
 
         if (token) {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            const { data: authData } = await supabase.auth.getUser(token);
 
-            const { data: user, error } = await supabase
-                .from('users')
-                .select('id, email, full_name, role, is_active')
-                .eq('id', decoded.userId)
-                .single();
+            if (authData?.user) {
+                const { data: profile } = await supabase
+                    .from('users')
+                    .select('id, email, name, full_name, role, is_active')
+                    .eq('id', authData.user.id)
+                    .single();
 
-            if (!error && user && user.is_active) {
-                req.user = user;
+                if (profile && profile.is_active !== false) {
+                    req.user = {
+                        ...profile,
+                        name: profile.name || profile.full_name || authData.user.email,
+                        role: profile.role || 'student'
+                    };
+                }
             }
         }
 

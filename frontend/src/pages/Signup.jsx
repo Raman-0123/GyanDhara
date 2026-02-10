@@ -1,13 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
+import { supabase } from '../services/supabaseClient';
 import { UserPlus, Mail, Lock, User, BookOpen } from 'lucide-react';
 
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLowerCase();
 
 export default function Signup() {
     const [email, setEmail] = useState('');
@@ -21,14 +18,21 @@ export default function Signup() {
         setLoading(true);
 
         try {
+            const normalizedEmail = email.trim().toLowerCase();
+            const pwd = password.trim();
+            if (!normalizedEmail || !pwd || !name.trim()) {
+                toast.error('Please fill all fields');
+                setLoading(false);
+                return;
+            }
+
             // Sign up with Supabase Auth
             const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
+                email: normalizedEmail,
+                password: pwd,
                 options: {
                     data: {
-                        name: name,
-                        role: 'student' // Default role
+                        name: name.trim()
                     }
                 }
             });
@@ -39,9 +43,16 @@ export default function Signup() {
 
             // Auto-login after signup
             if (data.session) {
+                const role = data.user?.user_metadata?.role
+                    || (normalizedEmail === ADMIN_EMAIL ? 'admin' : 'student');
                 localStorage.setItem('token', data.session.access_token);
-                localStorage.setItem('user', JSON.stringify(data.user));
-                navigate('/dashboard');
+                localStorage.setItem('user', JSON.stringify({
+                    ...data.user,
+                    name: name.trim(),
+                    role,
+                    is_active: true
+                }));
+                navigate(role === 'admin' ? '/admin' : '/dashboard');
             } else {
                 navigate('/login');
             }

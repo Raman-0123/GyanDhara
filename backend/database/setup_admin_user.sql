@@ -1,21 +1,25 @@
-
 -- =========================================
--- Setup Admin User for GyanDhara
+-- Setup Supabase-Auth -> public.users Sync
 -- Run this in Supabase SQL Editor
+--
+-- Why this exists:
+-- - This project uses Supabase Auth (auth.users) for login/signup.
+-- - The app also uses a public.users table (created by backend/database/schema.sql)
+--   for roles, progress, bookmarks, etc.
+-- - If a Supabase auth user exists but no row exists in public.users, calls like:
+--     supabase.from('users').select(...).single()
+--   fail with 406 / PGRST116 (0 rows).
 -- =========================================
 
--- Note: On older deployments the users table may exist without the "name" column.
--- The block below will add it if missing to avoid 42703 errors.
-CREATE TABLE IF NOT EXISTS public.users (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT UNIQUE NOT NULL,
-    name TEXT,
-    role TEXT DEFAULT 'student' CHECK (role IN ('student', 'admin')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Change this to your admin email (case-insensitive match)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename = 'users') THEN
+        RAISE EXCEPTION 'public.users table not found. Run backend/database/schema.sql first.';
+    END IF;
+END $$;
 
--- Ensure legacy tables gain the name column if it was missing
+-- Ensure "name" column exists (older schema.sql doesn't have it)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -28,127 +32,118 @@ BEGIN
     END IF;
 END $$;
 
--- Step 2: Enable Row Level Security
+-- Optional (recommended): link app users to auth.users via a FK when possible
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'users_id_auth_fk'
+    ) THEN
+        ALTER TABLE public.users
+            ADD CONSTRAINT users_id_auth_fk
+            FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- Enable RLS + allow users to read/update only their own row
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
--- =========================================
--- Step 3–5: RLS POLICIES (FIXED)
--- PostgreSQL DOES NOT support:
--- CREATE POLICY IF NOT EXISTS
--- =========================================
-
--- Users can read their own record
-DROP POLICY IF EXISTS "Users can view own record" ON public.users;
-CREATE POLICY "Users can view own record"
-    ON public.users
+DROP POLICY IF EXISTS users_read_own ON public.users;
+CREATE POLICY users_read_own ON public.users
     FOR SELECT
     USING (auth.uid() = id);
 
--- Public read (needed for admin checks)
-DROP POLICY IF EXISTS "Public can read users" ON public.users;
-CREATE POLICY "Public can read users"
-    ON public.users
-    FOR SELECT
-    TO PUBLIC
-    USING (true);
-
--- Users can update their own record
-DROP POLICY IF EXISTS "Users can update own record" ON public.users;
-CREATE POLICY "Users can update own record"
-    ON public.users
+DROP POLICY IF EXISTS users_update_own ON public.users;
+CREATE POLICY users_update_own ON public.users
     FOR UPDATE
-    USING (auth.uid() = id);
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
 
--- =========================================
--- Step 6: Function to auto-create user on signup
--- =========================================
+-- Make sure authenticated users can select/update; RLS still applies
+GRANT SELECT, UPDATE ON public.users TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.handle_new_user()
+-- Create/replace the trigger function to insert a matching public.users row on signup
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    admin_email TEXT := 'iamramanjot444@gmail.com';
+    display_name TEXT;
 BEGIN
-    INSERT INTO public.users (id, email, name, role)
+    display_name := COALESCE(NEW.raw_user_meta_data->>'name', NEW.email, 'User');
+
+    INSERT INTO public.users (
+        id,
+        email,
+        password_hash,
+        full_name,
+        name,
+        role,
+        email_verified,
+        is_active
+    )
     VALUES (
         NEW.id,
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'name', ''),
-        COALESCE(NEW.raw_user_meta_data->>'role', 'student')
+        'SUPABASE_AUTH',
+        display_name,
+        display_name,
+        CASE WHEN lower(NEW.email) = lower(admin_email) THEN 'admin' ELSE 'student' END,
+        (NEW.email_confirmed_at IS NOT NULL),
+        TRUE
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE
+    SET email = EXCLUDED.email,
+        full_name = EXCLUDED.full_name,
+        name = EXCLUDED.name,
+        email_verified = EXCLUDED.email_verified,
+        is_active = TRUE,
+        role = CASE
+            WHEN lower(EXCLUDED.email) = lower(admin_email) THEN 'admin'
+            ELSE public.users.role
+        END,
+        updated_at = NOW();
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- =========================================
--- Step 7: Trigger on auth.users insert
--- =========================================
-
+-- Trigger on auth.users insert
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW
-    EXECUTE FUNCTION public.handle_new_user();
+    EXECUTE FUNCTION public.handle_new_auth_user();
 
--- =========================================
--- Step 8: Set YOUR email as admin
--- =========================================
-
-DO $$
-DECLARE
-    admin_user_id UUID;
-BEGIN
-    SELECT id INTO admin_user_id
-    FROM auth.users
-    WHERE email = 'iamramanjot444@gmail.com';
-
-    IF admin_user_id IS NOT NULL THEN
-        INSERT INTO public.users (id, email, name, role)
-        VALUES (
-            admin_user_id,
-            'iamramanjot444@gmail.com',
-            'Admin User',
-            'admin'
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET role = 'admin',
-            name = 'Admin User';
-
-        RAISE NOTICE 'Admin user configured: %', admin_user_id;
-    ELSE
-        RAISE NOTICE 'User not found. Please sign up first, then rerun.';
-    END IF;
-END $$;
-
--- =========================================
--- Step 9: Verify admin user
--- =========================================
-
-SELECT 
+-- Backfill: create missing public.users rows for already-existing auth users
+INSERT INTO public.users (
     id,
     email,
+    password_hash,
+    full_name,
     name,
     role,
-    created_at
+    email_verified,
+    is_active
+)
+SELECT
+    au.id,
+    au.email,
+    'SUPABASE_AUTH',
+    COALESCE(au.raw_user_meta_data->>'name', au.email, 'User'),
+    COALESCE(au.raw_user_meta_data->>'name', au.email, 'User'),
+    CASE WHEN lower(au.email) = lower('iamramanjot444@gmail.com') THEN 'admin' ELSE 'student' END,
+    (au.email_confirmed_at IS NOT NULL),
+    TRUE
+FROM auth.users au
+LEFT JOIN public.users u ON u.id = au.id
+WHERE u.id IS NULL;
+
+-- Force admin role for your admin account (if it exists)
+UPDATE public.users
+SET role = 'admin', updated_at = NOW()
+WHERE lower(email) = lower('iamramanjot444@gmail.com');
+
+-- Verify admin user
+SELECT id, email, full_name, role, is_active, created_at
 FROM public.users
-WHERE email = 'iamramanjot444@gmail.com';
-
--- =========================================
--- Step 10: Indexes for performance
--- =========================================
-
-CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
-CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
-
--- =========================================
--- Verification Queries
--- =========================================
-
--- List all users
-SELECT id, email, name, role, created_at
-FROM public.users
-ORDER BY created_at DESC;
-
--- Count users by role
-SELECT role, COUNT(*)
-FROM public.users
-GROUP BY role;
+WHERE lower(email) = lower('iamramanjot444@gmail.com');

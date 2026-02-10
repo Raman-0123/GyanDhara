@@ -1,14 +1,28 @@
 import axios from 'axios';
 
-// In production (Vercel), use relative paths. In development, use localhost
-const API_URL = import.meta.env.VITE_API_URL ||
-    (import.meta.env.PROD ? '' : 'http://localhost:3000');
+// In production (Vercel), use relative paths. In development, default to localhost.
+const envApiUrl = import.meta.env.VITE_API_URL;
+const defaultDevUrl = 'http://localhost:3000';
+const isLocalHost = typeof window !== 'undefined'
+    && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+let API_URL = envApiUrl || (import.meta.env.PROD ? '' : defaultDevUrl);
+
+if (import.meta.env.DEV && isLocalHost) {
+    if (!envApiUrl || !envApiUrl.includes('localhost')) {
+        API_URL = defaultDevUrl;
+        if (envApiUrl) {
+            console.warn('[API] Overriding VITE_API_URL for local dev:', envApiUrl, '->', API_URL);
+        }
+    }
+}
+
+if (import.meta.env.DEV) {
+    console.info('[API] baseURL', API_URL || '(relative)');
+}
 
 const api = axios.create({
     baseURL: API_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
     timeout: 15000,
 });
 
@@ -17,6 +31,18 @@ api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('token');
         console.log('🔐 [API] Request to:', config.method?.toUpperCase(), config.url);
+
+        // If we're sending FormData, let the browser set the correct multipart boundary.
+        if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+            try {
+                // Axios v1 supports both plain objects and AxiosHeaders here.
+                delete config.headers?.['Content-Type'];
+                delete config.headers?.['content-type'];
+            } catch {
+                // Ignore - best effort only.
+            }
+        }
+
         if (token) {
             console.log('🔑 [API] Token attached:', token.substring(0, 20) + '...');
             config.headers.Authorization = `Bearer ${token}`;
