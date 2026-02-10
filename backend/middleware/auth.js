@@ -1,10 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
-
-// Use service role key so we can validate Supabase JWTs server-side and read roles
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_KEY
-);
+const { requireSupabase, supabaseConfig } = require('../lib/supabase');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLowerCase();
 
@@ -13,6 +7,7 @@ const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'iamramanjot444@gmail.com').toLo
  */
 const authenticateToken = async (req, res, next) => {
     try {
+        const supabase = requireSupabase();
         console.log('\n🔐 [AUTH] Authenticating request to:', req.method, req.path);
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
@@ -134,6 +129,13 @@ const authenticateToken = async (req, res, next) => {
         console.log('✅ [AUTH] Authentication successful for', mergedUser.email, 'Role:', mergedUser.role, '\n');
         next();
     } catch (error) {
+        if (error?.code === 'SUPABASE_CONFIG') {
+            console.error('[AUTH] Supabase env misconfigured:', supabaseConfig);
+            return res.status(500).json({
+                error: 'Internal Server Error',
+                message: 'Server misconfigured: Supabase env vars missing/invalid'
+            });
+        }
         console.error('Auth middleware error:', error);
         res.status(500).json({
             error: 'Internal Server Error',
@@ -176,6 +178,7 @@ const requireAdmin = (req, res, next) => {
  */
 const optionalAuth = async (req, res, next) => {
     try {
+        const supabase = requireSupabase();
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
 
@@ -183,11 +186,13 @@ const optionalAuth = async (req, res, next) => {
             const { data: authData } = await supabase.auth.getUser(token);
 
             if (authData?.user) {
-                const { data: profile } = await supabase
+                const { data, error } = await supabase
                     .from('users')
                     .select('id, email, name, full_name, role, is_active')
                     .eq('id', authData.user.id)
-                    .single();
+                    .limit(1);
+
+                const profile = !error && Array.isArray(data) ? data[0] : null;
 
                 if (profile && profile.is_active !== false) {
                     req.user = {

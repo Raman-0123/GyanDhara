@@ -1,12 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
 const { authenticateToken } = require('../middleware/auth');
-
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY
-);
+const { requireSupabase } = require('../lib/supabase');
 
 /**
  * POST /api/quiz/submit
@@ -14,6 +9,7 @@ const supabase = createClient(
  */
 router.post('/submit', authenticateToken, async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { topicId, quizId, answers } = req.body;
 
         if (!topicId || !quizId || !answers) {
@@ -80,6 +76,7 @@ router.post('/submit', authenticateToken, async (req, res) => {
  */
 router.get('/history', authenticateToken, async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { data: attempts, error } = await supabase
             .from('quiz_attempts')
             .select(`

@@ -1,20 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
 const { authenticateToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validator');
 const { asyncHandler } = require('../middleware/errorHandler');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+const { requireSupabase } = require('../lib/supabase');
 
 /**
  * GET /api/user/profile
  * Get user profile
  */
 router.get('/profile', authenticateToken, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
 
   const { data: user, error } = await supabase
@@ -33,6 +29,7 @@ router.get('/profile', authenticateToken, asyncHandler(async (req, res) => {
  * Update user profile
  */
 router.put('/profile', authenticateToken, validate('updateProfile'), asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
   const { fullName, preferredLanguage, preferredTheme } = req.body;
 
@@ -61,6 +58,7 @@ router.put('/profile', authenticateToken, validate('updateProfile'), asyncHandle
  * Get user learning progress and statistics
  */
 router.get('/progress', authenticateToken, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
 
   // Get user stats
@@ -128,6 +126,7 @@ router.get('/progress', authenticateToken, asyncHandler(async (req, res) => {
  * Bookmark a topic
  */
 router.post('/bookmark/:topicId', authenticateToken, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
   const { topicId } = req.params;
   const { notes } = req.body;
@@ -174,6 +173,7 @@ router.post('/bookmark/:topicId', authenticateToken, asyncHandler(async (req, re
  * Remove bookmark
  */
 router.delete('/bookmark/:topicId', authenticateToken, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
   const { topicId } = req.params;
 
@@ -198,6 +198,7 @@ router.delete('/bookmark/:topicId', authenticateToken, asyncHandler(async (req, 
  * Get all bookmarked topics
  */
 router.get('/bookmarks', authenticateToken, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
   const userId = req.user.id;
   const { page = 1, limit = 10 } = req.query;
   const offset = (page - 1) * limit;

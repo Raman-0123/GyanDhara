@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../lib/supabase');
+const { requireSupabase, supabaseConfig } = require('../lib/supabase');
 const { optionalAuth } = require('../middleware/auth');
 const { validateQuery, querySchemas } = require('../middleware/validator');
 const { asyncHandler } = require('../middleware/errorHandler');
@@ -13,6 +13,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
  */
 router.get('/themes', asyncHandler(async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { data: themes, error } = await supabase
             .from('themes')
             .select('*')
@@ -30,7 +31,8 @@ router.get('/themes', asyncHandler(async (req, res) => {
         return res.status(500).json({
             error: 'Failed to fetch themes',
             details: error.message,
-            code: error.code
+            code: error.code,
+            supabase: supabaseConfig
         });
     }
 }));
@@ -40,6 +42,7 @@ router.get('/themes', asyncHandler(async (req, res) => {
  * Get topics with filtering and pagination
  */
 router.get('/', validateQuery(querySchemas.topicQuery), optionalAuth, asyncHandler(async (req, res) => {
+    const supabase = requireSupabase();
     const { page, limit, theme, difficulty, language, search } = req.query;
     const offset = (page - 1) * limit;
 
@@ -79,6 +82,7 @@ router.get('/', validateQuery(querySchemas.topicQuery), optionalAuth, asyncHandl
  * Get single topic with quiz and PDF info
  */
 router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
+    const supabase = requireSupabase();
     const { id } = req.params;
 
     // Get topic
@@ -123,6 +127,7 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
  * Create a new topic
  */
 router.post('/', asyncHandler(async (req, res) => {
+    const supabase = requireSupabase();
     const {
         theme_id,
         title,
@@ -178,6 +183,7 @@ router.post('/', asyncHandler(async (req, res) => {
  * Full-text search across topics
  */
 router.get('/search/:query', asyncHandler(async (req, res) => {
+    const supabase = requireSupabase();
     const { query } = req.params;
     const { limit = 20 } = req.query;
 

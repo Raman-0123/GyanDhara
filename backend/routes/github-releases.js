@@ -11,7 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { supabase } = require('../lib/supabase');
+const { requireSupabase, supabaseConfig } = require('../lib/supabase');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
@@ -136,6 +136,7 @@ async function uploadPDFToRelease(file, release, customName = null) {
 async function uploadCoverImage(file) {
     if (!file) return null;
 
+    const supabase = requireSupabase();
     const fileBuffer = fs.readFileSync(file.path);
 
     const sanitizedName = file.originalname.replace(/\s+/g, '_');
@@ -186,6 +187,7 @@ async function getOrCreateThemeBucketTopic(themeId) {
         throw new Error('Invalid theme_id');
     }
 
+    const supabase = requireSupabase();
     const { data: theme, error: themeError } = await supabase
         .from('themes')
         .select('id, name')
@@ -242,6 +244,7 @@ router.post('/upload-pdf',
         { name: 'cover_image', maxCount: 1 }
     ]),
     asyncHandler(async (req, res) => {
+        const supabase = requireSupabase();
         const {
             topic_id,
             theme_id,
@@ -376,6 +379,7 @@ router.get('/pdfs', asyncHandler(async (req, res) => {
     const { topic_id } = req.query;
 
     try {
+        const supabase = requireSupabase();
         let query = supabase
             .from('topic_books')
             .select('*')
@@ -405,7 +409,8 @@ router.get('/pdfs', asyncHandler(async (req, res) => {
             success: false,
             error: 'Failed to fetch books',
             details: error.message,
-            code: error.code
+            code: error.code,
+            supabase: supabaseConfig
         });
     }
 }));
@@ -419,6 +424,7 @@ router.post('/migrate-all',
     authenticateToken,
     requireAdmin,
     asyncHandler(async (_req, res) => {
+        const supabase = requireSupabase();
         const { data: books, error } = await supabase
             .from('topic_books')
             .select('*')
@@ -500,6 +506,7 @@ router.put('/pdf/:id',
         { name: 'cover_image', maxCount: 1 }
     ]),
     asyncHandler(async (req, res) => {
+        const supabase = requireSupabase();
         const { id } = req.params;
         const {
             title,
@@ -649,6 +656,7 @@ router.delete('/pdf/:id',
     authenticateToken,
     requireAdmin,
     asyncHandler(async (req, res) => {
+        const supabase = requireSupabase();
         const { id } = req.params;
 
         // Get book metadata
@@ -702,6 +710,7 @@ router.delete('/pdf/:id',
  */
 router.get('/stats', asyncHandler(async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { data: books, error } = await supabase
             .from('topic_books')
             .select('file_size_bytes, storage_type');
@@ -728,7 +737,8 @@ router.get('/stats', asyncHandler(async (req, res) => {
             success: false,
             error: 'Failed to fetch stats',
             details: error.message,
-            code: error.code
+            code: error.code,
+            supabase: supabaseConfig
         });
     }
 }));

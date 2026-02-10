@@ -30,7 +30,9 @@ const api = axios.create({
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('token');
-        console.log('🔐 [API] Request to:', config.method?.toUpperCase(), config.url);
+        if (import.meta.env.DEV) {
+            console.log('🔐 [API] Request to:', config.method?.toUpperCase(), config.url);
+        }
 
         // If we're sending FormData, let the browser set the correct multipart boundary.
         if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
@@ -44,10 +46,14 @@ api.interceptors.request.use(
         }
 
         if (token) {
-            console.log('🔑 [API] Token attached:', token.substring(0, 20) + '...');
+            if (import.meta.env.DEV) {
+                console.log('🔑 [API] Token attached');
+            }
             config.headers.Authorization = `Bearer ${token}`;
         } else {
-            console.log('⚠️ [API] No token found in localStorage');
+            if (import.meta.env.DEV) {
+                console.log('⚠️ [API] No token found in localStorage');
+            }
         }
         return config;
     },
@@ -66,7 +72,9 @@ api.interceptors.response.use(
 
             // Only redirect to login if not already on login/signup pages
             if (currentPath !== '/login' && currentPath !== '/signup') {
-                console.error('Authentication failed, redirecting to login');
+                if (import.meta.env.DEV) {
+                    console.error('Authentication failed, redirecting to login');
+                }
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
 

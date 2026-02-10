@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
+const { supabaseConfig, requireSupabase } = require('./lib/supabase');
 
 // Import routes
 const topicRoutes = require('./routes/topics');
@@ -123,6 +124,39 @@ app.get('/health', (req, res) => {
         uptime: process.uptime(),
         environment: process.env.NODE_ENV
     });
+});
+
+// Diagnostics (safe: does not return secrets). Useful for debugging Vercel env + Supabase connectivity.
+app.get('/api/diag/supabase', async (req, res) => {
+    const result = {
+        timestamp: new Date().toISOString(),
+        vercel: Boolean(process.env.VERCEL),
+        nodeEnv: process.env.NODE_ENV || null,
+        supabase: supabaseConfig,
+        github: {
+            hasToken: Boolean(process.env.GITHUB_TOKEN),
+            hasOwner: Boolean(process.env.GITHUB_OWNER),
+            hasRepo: Boolean(process.env.GITHUB_REPO),
+        },
+        tests: {}
+    };
+
+    try {
+        const supabase = requireSupabase();
+        const themes = await supabase.from('themes').select('id', { count: 'exact', head: true }).limit(1);
+        result.tests.themes = themes.error
+            ? { ok: false, error: { message: themes.error.message, code: themes.error.code } }
+            : { ok: true, count: themes.count ?? null };
+
+        const books = await supabase.from('topic_books').select('id', { count: 'exact', head: true }).limit(1);
+        result.tests.topic_books = books.error
+            ? { ok: false, error: { message: books.error.message, code: books.error.code } }
+            : { ok: true, count: books.count ?? null };
+    } catch (err) {
+        result.tests.supabase = { ok: false, error: { message: err.message, code: err.code } };
+    }
+
+    return res.json(result);
 });
 
 // API Routes

@@ -1,12 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
-
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY
-);
+const { requireSupabase } = require('../lib/supabase');
 
 /**
  * POST /api/ratings
@@ -14,6 +9,7 @@ const supabase = createClient(
  */
 router.post('/', authenticateToken, async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { topicId, rating, comment } = req.body;
 
         if (!topicId || !rating || rating < 1 || rating > 5) {
@@ -82,6 +78,7 @@ router.post('/', authenticateToken, async (req, res) => {
  */
 router.get('/topic/:topicId', optionalAuth, async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { topicId } = req.params;
 
         const { data: ratings, error } = await supabase

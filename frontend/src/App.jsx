@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -18,67 +19,69 @@ function App() {
     return (
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AuthProvider>
-                <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
-                    <Routes>
-                        {/* Auth entry points (no navbar) */}
-                        <Route path="/" element={<Login />} />
-                        <Route path="/login" element={<Login />} />
-                        <Route path="/signup" element={<Signup />} />
+                <ErrorBoundary>
+                    <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
+                        <Routes>
+                            {/* Auth entry points (no navbar) */}
+                            <Route path="/" element={<Login />} />
+                            <Route path="/login" element={<Login />} />
+                            <Route path="/signup" element={<Signup />} />
 
-                        {/* Protected app with navbar */}
-                        <Route element={<NavbarLayout />}>
-                            <Route
-                                path="/home"
-                                element={<ProtectedRoute><Home /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/themes"
-                                element={<ProtectedRoute><ThemeGallery /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/themes/:themeId"
-                                element={<ProtectedRoute><TopicList /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/topics/:topicId/books"
-                                element={<ProtectedRoute><BooksList /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/books"
-                                element={<ProtectedRoute><BooksList /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/topics/:id"
-                                element={<ProtectedRoute><TopicReader /></ProtectedRoute>}
-                            />
-                            <Route
-                                path="/dashboard"
-                                element={<StudentRoute><Dashboard /></StudentRoute>}
-                            />
-                            <Route
-                                path="/bookmarks"
-                                element={<StudentRoute><Bookmarks /></StudentRoute>}
-                            />
-                            <Route
-                                path="/admin"
-                                element={<AdminRoute><AdminPanel /></AdminRoute>}
-                            />
-                        </Route>
+                            {/* Protected app with navbar */}
+                            <Route element={<NavbarLayout />}>
+                                <Route
+                                    path="/home"
+                                    element={<ProtectedRoute><Home /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/themes"
+                                    element={<ProtectedRoute><ThemeGallery /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/themes/:themeId"
+                                    element={<ProtectedRoute><TopicList /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/topics/:topicId/books"
+                                    element={<ProtectedRoute><BooksList /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/books"
+                                    element={<ProtectedRoute><BooksList /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/topics/:id"
+                                    element={<ProtectedRoute><TopicReader /></ProtectedRoute>}
+                                />
+                                <Route
+                                    path="/dashboard"
+                                    element={<StudentRoute><Dashboard /></StudentRoute>}
+                                />
+                                <Route
+                                    path="/bookmarks"
+                                    element={<StudentRoute><Bookmarks /></StudentRoute>}
+                                />
+                                <Route
+                                    path="/admin"
+                                    element={<AdminRoute><AdminPanel /></AdminRoute>}
+                                />
+                            </Route>
 
-                        <Route
-                            path="*"
-                            element={
-                                <div className="min-h-screen flex items-center justify-center">
-                                    <div className="text-center">
-                                        <h1 className="text-6xl font-bold mb-4">404</h1>
-                                        <p className="text-xl text-gray-600">Page not found</p>
+                            <Route
+                                path="*"
+                                element={
+                                    <div className="min-h-screen flex items-center justify-center">
+                                        <div className="text-center">
+                                            <h1 className="text-6xl font-bold mb-4">404</h1>
+                                            <p className="text-xl text-gray-600">Page not found</p>
+                                        </div>
                                     </div>
-                                </div>
-                            }
-                        />
-                    </Routes>
-                    <Toaster position="top-right" />
-                </div>
+                                }
+                            />
+                        </Routes>
+                        <Toaster position="top-right" />
+                    </div>
+                </ErrorBoundary>
             </AuthProvider>
         </BrowserRouter>
     );

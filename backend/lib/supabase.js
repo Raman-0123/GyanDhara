@@ -13,15 +13,49 @@ const SUPABASE_SERVICE_ROLE =
     process.env.SUPABASE_SERVICE_ROLE ||
     process.env.SUPABASE_SERVICE_KEY; // some deployments used SERVICE_KEY
 
-if (!SUPABASE_URL) {
-    console.warn('⚠️  SUPABASE_URL is not set. Supabase client will not function correctly.');
+function decodeJwtRole(jwt) {
+    try {
+        if (!jwt || typeof jwt !== 'string') return null;
+        const parts = jwt.split('.');
+        if (parts.length < 2) return null;
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+        return payload?.role || null;
+    } catch {
+        return null;
+    }
 }
 
 const key = SUPABASE_SERVICE_ROLE || SUPABASE_ANON_KEY;
-if (!SUPABASE_SERVICE_ROLE) {
+
+const supabaseConfig = {
+    hasUrl: Boolean(SUPABASE_URL),
+    hasAnonKey: Boolean(SUPABASE_ANON_KEY),
+    hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE),
+    effectiveKeyRole: decodeJwtRole(key),
+};
+
+if (!supabaseConfig.hasUrl) {
+    console.warn('⚠️  SUPABASE_URL is not set. Supabase client will not function correctly.');
+}
+if (!supabaseConfig.hasAnonKey && !supabaseConfig.hasServiceRoleKey) {
+    console.warn('⚠️  SUPABASE_KEY/SUPABASE_SERVICE_ROLE is not set. Supabase client will not function correctly.');
+}
+if (!supabaseConfig.hasServiceRoleKey) {
     console.warn('ℹ️  Using anon key (SUPABASE_KEY). For privileged server access, set SUPABASE_SERVICE_ROLE.');
 }
 
-const supabase = createClient(SUPABASE_URL, key);
+let supabase = null;
+function requireSupabase() {
+    if (supabase) return supabase;
+    const err = new Error(
+        'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE (or SUPABASE_KEY for anon).'
+    );
+    err.code = 'SUPABASE_CONFIG';
+    throw err;
+}
 
-module.exports = { supabase };
+if (supabaseConfig.hasUrl && key) {
+    supabase = createClient(SUPABASE_URL, key);
+}
+
+module.exports = { supabase, supabaseConfig, requireSupabase };

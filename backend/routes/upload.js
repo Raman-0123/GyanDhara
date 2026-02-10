@@ -2,13 +2,8 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
 const { authenticateToken } = require('../middleware/auth');
-
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY
-);
+const { requireSupabase } = require('../lib/supabase');
 
 // Configure multer for PDF uploads
 const storage = multer.diskStorage({
@@ -39,6 +34,7 @@ const upload = multer({
  */
 router.post('/pdf', authenticateToken, upload.single('pdf'), async (req, res) => {
     try {
+        const supabase = requireSupabase();
         if (!req.file) {
             return res.status(400).json({ error: 'No PDF file uploaded' });
         }
@@ -96,6 +92,7 @@ router.post('/pdf', authenticateToken, upload.single('pdf'), async (req, res) =>
  */
 router.get('/my-uploads', authenticateToken, async (req, res) => {
     try {
+        const supabase = requireSupabase();
         const { data: topics, error } = await supabase
             .from('topics')
             .select('*')

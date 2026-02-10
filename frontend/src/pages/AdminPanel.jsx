@@ -4,6 +4,18 @@ import { toast } from 'react-hot-toast';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+function toErrorString(value) {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (typeof value === 'object' && typeof value.message === 'string') return value.message;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
 export default function AdminPanel() {
     const navigate = useNavigate();
     const { user, isAdmin, loading: authLoading } = useAuth();
@@ -76,10 +88,11 @@ export default function AdminPanel() {
             const response = await api.get('/api/topics/themes');
             setThemes(response.data.themes || []);
         } catch (error) {
-            const message = error.response?.data?.message
+            const raw = error.response?.data?.message
                 || error.response?.data?.error
                 || error.message
                 || 'Failed to fetch themes';
+            const message = toErrorString(raw) || 'Failed to fetch themes';
             if (!themesError) toast.error(message);
             setThemesError(message);
             console.error(error);
@@ -91,7 +104,13 @@ export default function AdminPanel() {
             const response = await api.get('/api/github-releases/stats');
             setUploadStats(response.data.stats);
         } catch (error) {
+            const raw = error.response?.data?.message
+                || error.response?.data?.error
+                || error.message
+                || 'Failed to fetch stats';
             console.error('Failed to fetch stats:', error);
+            // Never pass non-strings into toast - it can crash React in production builds.
+            toast.error(toErrorString(raw) || 'Failed to fetch stats');
         }
     };
 
@@ -103,10 +122,11 @@ export default function AdminPanel() {
             setBooks(response.data.books || []);
         } catch (error) {
             console.error('Failed to fetch books:', error);
-            const message = error.response?.data?.message
+            const raw = error.response?.data?.message
                 || error.response?.data?.error
                 || error.message
                 || 'Failed to load books';
+            const message = toErrorString(raw) || 'Failed to load books';
             if (!booksError) toast.error(message);
             setBooksError(message);
         } finally {
@@ -221,8 +241,11 @@ export default function AdminPanel() {
                 status: error?.response?.status,
                 data: error?.response?.data
             });
-            const errorMsg = error?.response?.data?.error || error?.message || 'Upload failed';
-            toast.error(errorMsg, { id: uploadToast });
+            const raw = error?.response?.data?.message
+                || error?.response?.data?.error
+                || error?.message
+                || 'Upload failed';
+            toast.error(toErrorString(raw) || 'Upload failed', { id: uploadToast });
         } finally {
             setUploading(false);
         }
@@ -294,7 +317,8 @@ export default function AdminPanel() {
             fetchBooks();
         } catch (error) {
             console.error('Update failed:', error);
-            toast.error(error.response?.data?.error || 'Failed to update book');
+            const raw = error.response?.data?.message || error.response?.data?.error || error.message;
+            toast.error(toErrorString(raw) || 'Failed to update book');
         } finally {
             setSaving(false);
         }
@@ -336,7 +360,8 @@ export default function AdminPanel() {
             fetchUploadStats();
         } catch (error) {
             console.error('Migration failed:', error);
-            toast.error(error.response?.data?.error || 'Migration failed');
+            const raw = error.response?.data?.message || error.response?.data?.error || error.message;
+            toast.error(toErrorString(raw) || 'Migration failed');
         } finally {
             setMigrating(false);
         }
