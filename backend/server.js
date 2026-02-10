@@ -24,6 +24,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = Boolean(process.env.VERCEL);
+let server = null;
 
 // Vercel rewrites can drop the "/api" prefix before requests hit Express.
 // Normalize the path so existing routes keep working in all environments.
@@ -194,7 +195,7 @@ app.use(errorHandler);
 
 // Start server only in standalone mode (not in Vercel serverless)
 if (!process.env.VERCEL) {
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
         console.log(`🌊 GyanDhara Backend running on port ${PORT}`);
         console.log(`📍 Environment: ${process.env.NODE_ENV}`);
         console.log(`🔗 Health check: http://localhost:${PORT}/health`);
@@ -203,10 +204,16 @@ if (!process.env.VERCEL) {
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-    console.log('👋 SIGTERM signal received: closing HTTP server');
-    app.close(() => {
-        console.log('✅ HTTP server closed');
-    });
+    try {
+        console.log('👋 SIGTERM signal received: closing HTTP server');
+        if (server && typeof server.close === 'function') {
+            server.close(() => {
+                console.log('✅ HTTP server closed');
+            });
+        }
+    } catch (err) {
+        console.error('SIGTERM shutdown error:', err);
+    }
 });
 
 module.exports = app;
