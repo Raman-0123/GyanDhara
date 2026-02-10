@@ -129,35 +129,53 @@ app.get('/health', (req, res) => {
 
 // Diagnostics (safe: does not return secrets). Useful for debugging Vercel env + Supabase connectivity.
 app.get('/api/diag/supabase', async (req, res) => {
-    const result = {
-        timestamp: new Date().toISOString(),
-        vercel: Boolean(process.env.VERCEL),
-        nodeEnv: process.env.NODE_ENV || null,
-        supabase: supabaseConfig,
-        github: {
-            hasToken: Boolean(process.env.GITHUB_TOKEN),
-            hasOwner: Boolean(process.env.GITHUB_OWNER),
-            hasRepo: Boolean(process.env.GITHUB_REPO),
-        },
-        tests: {}
-    };
-
     try {
-        const supabase = requireSupabase();
-        const themes = await supabase.from('themes').select('id', { count: 'exact', head: true }).limit(1);
-        result.tests.themes = themes.error
-            ? { ok: false, error: { message: themes.error.message, code: themes.error.code } }
-            : { ok: true, count: themes.count ?? null };
+        const result = {
+            timestamp: new Date().toISOString(),
+            vercel: Boolean(process.env.VERCEL),
+            nodeEnv: process.env.NODE_ENV || null,
+            supabase: supabaseConfig,
+            github: {
+                hasToken: Boolean(process.env.GITHUB_TOKEN),
+                hasOwner: Boolean(process.env.GITHUB_OWNER),
+                hasRepo: Boolean(process.env.GITHUB_REPO),
+            },
+            tests: {}
+        };
 
-        const books = await supabase.from('topic_books').select('id', { count: 'exact', head: true }).limit(1);
-        result.tests.topic_books = books.error
-            ? { ok: false, error: { message: books.error.message, code: books.error.code } }
-            : { ok: true, count: books.count ?? null };
-    } catch (err) {
-        result.tests.supabase = { ok: false, error: { message: err.message, code: err.code } };
+        // If we don't even have a URL or key, report and return early (don’t throw).
+        if (!supabaseConfig.hasUrl || (!supabaseConfig.hasAnonKey && !supabaseConfig.hasServiceRoleKey)) {
+            result.tests.supabase = {
+                ok: false,
+                error: { message: 'Missing SUPABASE_URL or keys in environment' }
+            };
+            return res.json(result);
+        }
+
+        try {
+            const supabase = requireSupabase();
+
+            const themes = await supabase.from('themes').select('id', { count: 'exact', head: true }).limit(1);
+            result.tests.themes = themes.error
+                ? { ok: false, error: { message: themes.error.message, code: themes.error.code } }
+                : { ok: true, count: themes.count ?? null };
+
+            const books = await supabase.from('topic_books').select('id', { count: 'exact', head: true }).limit(1);
+            result.tests.topic_books = books.error
+                ? { ok: false, error: { message: books.error.message, code: books.error.code } }
+                : { ok: true, count: books.count ?? null };
+        } catch (err) {
+            result.tests.supabase = { ok: false, error: { message: err.message, code: err.code } };
+        }
+
+        return res.json(result);
+    } catch (outerErr) {
+        console.error('diag/supabase fatal error:', outerErr);
+        return res.status(500).json({
+            error: 'diag_failed',
+            message: outerErr.message
+        });
     }
-
-    return res.json(result);
 });
 
 // API Routes
