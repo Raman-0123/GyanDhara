@@ -3,6 +3,8 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 import ThemeGallery from './pages/ThemeGallery';
 import TopicList from './pages/TopicList';
 import BooksList from './pages/BooksList';
@@ -19,9 +21,12 @@ function App() {
                     <Navbar />
                     <Routes>
                         <Route path="/" element={<Home />} />
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/signup" element={<Signup />} />
                         <Route path="/themes" element={<ThemeGallery />} />
                         <Route path="/themes/:themeId" element={<TopicList />} />
                         <Route path="/topics/:topicId/books" element={<BooksList />} />
+                        <Route path="/books" element={<BooksList />} />
                         <Route path="/topics/:id" element={<TopicReader />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/bookmarks" element={<Bookmarks />} />
