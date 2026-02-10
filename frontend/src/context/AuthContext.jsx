@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }) => {
     // Fetch user profile with role from database
     const fetchUserProfile = async (authUser) => {
         try {
-            const response = await api.get('/user/profile');
+            const response = await api.get('/api/user/profile');
             return {
                 ...authUser,
                 ...response.data.user,

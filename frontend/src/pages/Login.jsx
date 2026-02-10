@@ -32,7 +32,7 @@ export default function Login() {
             localStorage.setItem('token', data.session.access_token);
 
             // Fetch user profile to get role
-            const profileRes = await api.get('/user/profile');
+            const profileRes = await api.get('/api/user/profile');
             const userWithRole = {
                 ...data.user,
                 ...profileRes.data.user,
