@@ -22,15 +22,34 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    // Fetch user profile with role from database
+    const fetchUserProfile = async (authUser) => {
+        try {
+            const response = await api.get('/user/profile');
+            return {
+                ...authUser,
+                ...response.data.user,
+                role: response.data.user.role || 'student'
+            };
+        } catch (error) {
+            console.error('Failed to fetch user profile:', error);
+            return {
+                ...authUser,
+                role: 'student' // Default role
+            };
+        }
+    };
+
     useEffect(() => {
         // Check for existing session
         const initAuth = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             
             if (session) {
-                setUser(session.user);
+                const userWithRole = await fetchUserProfile(session.user);
+                setUser(userWithRole);
                 localStorage.setItem('token', session.access_token);
-                localStorage.setItem('user', JSON.stringify(session.user));
+                localStorage.setItem('user', JSON.stringify(userWithRole));
             } else {
                 // Clear localStorage if no session
                 localStorage.removeItem('token');
@@ -43,11 +62,12 @@ export const AuthProvider = ({ children }) => {
         initAuth();
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             if (session) {
-                setUser(session.user);
+                const userWithRole = await fetchUserProfile(session.user);
+                setUser(userWithRole);
                 localStorage.setItem('token', session.access_token);
-                localStorage.setItem('user', JSON.stringify(session.user));
+                localStorage.setItem('user', JSON.stringify(userWithRole));
             } else {
                 setUser(null);
                 localStorage.removeItem('token');
@@ -70,6 +90,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         logout,
         isAuthenticated: !!user,
+        isAdmin: user?.role === 'admin',
         supabase, // Expose supabase client for direct use
     };
 

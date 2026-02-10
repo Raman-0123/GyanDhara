@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function AdminPanel() {
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, isAdmin, loading: authLoading } = useAuth();
     const [topics, setTopics] = useState([]);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -28,21 +28,25 @@ export default function AdminPanel() {
 
     // Check if user is admin
     useEffect(() => {
-        if (user && user.role !== 'admin') {
+        if (!authLoading && (!user || !isAdmin)) {
             toast.error('Access denied: Admin only');
             navigate('/dashboard');
+        } else if (!authLoading && isAdmin) {
+            // Fetch data only after auth check passes
+            fetchTopics();
+            fetchUploadStats();
         }
-    }, [user, navigate]);
+    }, [user, isAdmin, authLoading, navigate]);
 
     // Fetch topics for the dropdown
-    useEffect(() => {
-        fetchTopics();
-        fetchUploadStats();
-    }, []);
+    // useEffect(() => {
+    //     fetchTopics();
+    //     fetchUploadStats();
+    // }, []);
 
     const fetchTopics = async () => {
         try {
-            const response = await api.get('/topics');
+            const response = await api.get('/api/topics');
             setTopics(response.data.topics || response.data);
         } catch (error) {
             toast.error('Failed to fetch topics');
@@ -52,7 +56,7 @@ export default function AdminPanel() {
 
     const fetchUploadStats = async () => {
         try {
-            const response = await api.get('/github-releases/stats');
+            const response = await api.get('/api/github-releases/stats');
             setUploadStats(response.data.stats);
         } catch (error) {
             console.error('Failed to fetch stats:', error);
