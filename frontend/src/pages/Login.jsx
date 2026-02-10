@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
-import api from '../services/api';
+import { supabase } from '../services/supabaseClient';
 import { LogIn, Mail, Lock, BookOpen } from 'lucide-react';
 
 const supabase = createClient(
@@ -31,13 +31,21 @@ export default function Login() {
             // Store token and user data temporarily
             localStorage.setItem('token', data.session.access_token);
 
-            // Fetch user profile to get role
-            const profileRes = await api.get('/api/user/profile');
+            // Fetch user profile to get role directly from Supabase table
+            const { data: profile, error: profileError } = await supabase
+                .from('users')
+                .select('id, email, name, role')
+                .eq('id', data.user.id)
+                .single();
+
+            if (profileError) throw profileError;
+
             const userWithRole = {
                 ...data.user,
-                ...profileRes.data.user,
-                role: profileRes.data.user?.role || 'student'
+                ...profile,
+                role: profile?.role || 'student'
             };
+
             localStorage.setItem('user', JSON.stringify(userWithRole));
 
             toast.success('Welcome back! 🎉');

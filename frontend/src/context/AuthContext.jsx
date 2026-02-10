@@ -25,14 +25,21 @@ export const AuthProvider = ({ children }) => {
     // Fetch user profile with role from database
     const fetchUserProfile = async (authUser) => {
         try {
-            const response = await api.get('/api/user/profile');
+            const { data, error } = await supabase
+                .from('users')
+                .select('id, email, name, role')
+                .eq('id', authUser.id)
+                .single();
+
+            if (error) throw error;
+
             return {
                 ...authUser,
-                ...response.data.user,
-                role: response.data.user.role || 'student'
+                ...data,
+                role: data?.role || 'student'
             };
         } catch (error) {
-            console.error('Failed to fetch user profile:', error);
+            console.error('Failed to fetch user profile from Supabase:', error);
             return {
                 ...authUser,
                 role: 'student' // Default role
