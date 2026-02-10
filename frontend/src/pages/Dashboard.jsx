@@ -1,39 +1,30 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Award, BookOpen, Clock, TrendingUp } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import StreakCalendar from '../components/StreakCalendar';
 
 export default function Dashboard() {
-    const { user, loading: authLoading, createProfile } = useAuth();
+    const navigate = useNavigate();
+    const { user, loading: authLoading, isAdmin } = useAuth();
     const [progress, setProgress] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [showCreateProfile, setShowCreateProfile] = useState(false);
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
 
     useEffect(() => {
-        if (!authLoading) {
-            if (!user) {
-                setShowCreateProfile(true);
-            }
-            setLoading(false);
-        }
-    }, [user, authLoading]);
-
-    const handleCreateProfile = (e) => {
-        e.preventDefault();
-        if (!username.trim()) {
-            toast.error('Please enter a username');
+        if (authLoading) return;
+        if (!user) {
+            navigate('/login');
             return;
         }
-        createProfile(username.trim(), email.trim() || null);
-        setShowCreateProfile(false);
-        toast.success(`Welcome, ${username}! 🎉`);
-    };
+        if (isAdmin) {
+            navigate('/admin');
+            return;
+        }
+        setLoading(false);
+    }, [user, authLoading, isAdmin, navigate]);
 
     if (loading || authLoading) {
         return (
@@ -45,80 +36,7 @@ export default function Dashboard() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 py-12 transition-colors duration-500">
-            {/* Create Profile Modal */}
-            <AnimatePresence>
-                {showCreateProfile && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm"
-                        onClick={() => setShowCreateProfile(false)}
-                    >
-                        <motion.div
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="text-center mb-6">
-                                <div className="text-6xl mb-4">🎓</div>
-                                <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                                    Welcome to GyanDhara!
-                                </h2>
-                                <p className="text-gray-600 dark:text-gray-400">
-                                    Create your learning profile to track progress and build streaks
-                                </p>
-                            </div>
-
-                            <form onSubmit={handleCreateProfile} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Username *
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
-                                        className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none transition-all"
-                                        placeholder="Enter your username"
-                                        required
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        Email (Optional)
-                                    </label>
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none transition-all"
-                                        placeholder="your@email.com"
-                                    />
-                                </div>
-
-                                <div className="pt-4">
-                                    <motion.button
-                                        type="submit"
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 rounded-lg transition-all shadow-lg"
-                                    >
-                                        Create Profile & Start Learning
-                                    </motion.button>
-                                </div>
-                            </form>
-
-                            <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-4">
-                                Your progress is saved locally in your browser
-                            </p>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Authenticated student dashboard */}
 
             <div className="container mx-auto px-4">
                 <motion.div
@@ -129,7 +47,7 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between mb-8">
                         <div>
                             <h1 className="text-5xl font-black mb-3 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                                Welcome back, {user?.username || 'Learner'}! 👋
+                                Welcome back, {user?.name || user?.email || 'Learner'}! 👋
                             </h1>
                             <p className="text-gray-600 dark:text-gray-300 text-lg">Track your learning progress</p>
                         </div>

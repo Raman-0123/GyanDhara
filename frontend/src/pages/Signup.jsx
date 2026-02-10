@@ -36,7 +36,7 @@ export default function Signup() {
             if (error) throw error;
 
             toast.success('Account created! Please check your email to verify.');
-            
+
             // Auto-login after signup
             if (data.session) {
                 localStorage.setItem('token', data.session.access_token);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
+import api from '../services/api';
 import { LogIn, Mail, Lock, BookOpen } from 'lucide-react';
 
 const supabase = createClient(
@@ -27,12 +28,26 @@ export default function Login() {
 
             if (error) throw error;
 
-            // Store token and user data
+            // Store token and user data temporarily
             localStorage.setItem('token', data.session.access_token);
-            localStorage.setItem('user', JSON.stringify(data.user));
-            
+
+            // Fetch user profile to get role
+            const profileRes = await api.get('/user/profile');
+            const userWithRole = {
+                ...data.user,
+                ...profileRes.data.user,
+                role: profileRes.data.user?.role || 'student'
+            };
+            localStorage.setItem('user', JSON.stringify(userWithRole));
+
             toast.success('Welcome back! 🎉');
-            navigate('/dashboard');
+
+            // Route by role
+            if (userWithRole.role === 'admin') {
+                navigate('/admin');
+            } else {
+                navigate('/dashboard');
+            }
         } catch (error) {
             console.error('Login error:', error);
             toast.error(error.message || 'Failed to login');

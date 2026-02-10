@@ -20,7 +20,9 @@ function App() {
                 <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
                     <Navbar />
                     <Routes>
-                        <Route path="/" element={<Home />} />
+                        {/* Auth first: landing goes to login */}
+                        <Route path="/" element={<Login />} />
+                        <Route path="/home" element={<Home />} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/signup" element={<Signup />} />
                         <Route path="/themes" element={<ThemeGallery />} />

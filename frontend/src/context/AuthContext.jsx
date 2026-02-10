@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }) => {
         // Check for existing session
         const initAuth = async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            
+
             if (session) {
                 const userWithRole = await fetchUserProfile(session.user);
                 setUser(userWithRole);
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
             }
-            
+
             setLoading(false);
         };
 
