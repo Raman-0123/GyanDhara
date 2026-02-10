@@ -15,6 +15,14 @@ export default function BooksList() {
     const [topic, setTopic] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
+
+    const resolveAssetUrl = (url) => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) return url;
+        return `${apiBaseUrl}${url}`;
+    };
+
     useEffect(() => {
         loadTopic();
         loadBooks();
@@ -104,9 +112,13 @@ export default function BooksList() {
                                         {book.cover_image_url ? (
                                             <div className="w-full h-96 overflow-hidden bg-gray-100 dark:bg-gray-700 rounded-t-lg">
                                                 <img
-                                                    src={`${import.meta.env.VITE_API_URL}${book.cover_image_url}`}
+                                                    src={resolveAssetUrl(book.cover_image_url)}
                                                     alt={book.title}
                                                     className="w-full h-full object-contain"
+                                                    onError={(e) => {
+                                                        // Hide broken images and fall back to gradient block
+                                                        e.currentTarget.style.display = 'none';
+                                                    }}
                                                 />
                                             </div>
                                         ) : (
