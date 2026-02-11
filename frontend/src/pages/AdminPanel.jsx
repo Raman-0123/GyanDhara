@@ -186,35 +186,13 @@ export default function AdminPanel() {
         const uploadToast = toast.loading('Uploading PDF to GitHub Releases...');
 
         try {
-            // Step 1: get signed upload URL from backend (uses service role, bypasses RLS)
-            const { data: signed } = await api.post('/api/github-releases/signed-upload', {
-                filename: pdfFile.name,
-                contentType: pdfFile.type || 'application/pdf'
-            });
-
-            // Step 2: upload file directly to the signed URL returned by backend
-            const putResp = await fetch(signed.signedUrl, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': pdfFile.type || 'application/pdf',
-                    'x-upsert': 'true'
-                },
-                body: pdfFile
-            });
-            if (!putResp.ok) {
-                throw new Error(`Signed upload failed (status ${putResp.status})`);
-            }
-            const storagePath = signed.path;
-
-            // Create FormData
+            // Create FormData with direct PDF upload to backend
             const data = new FormData();
             Object.keys(formData).forEach(key => {
                 data.append(key, formData[key]);
             });
-            data.append('storage_path', storagePath);
-            if (coverFile) {
-                data.append('cover_image', coverFile);
-            }
+            data.append('pdf', pdfFile);
+            if (coverFile) data.append('cover_image', coverFile);
 
             console.info('[AdminUpload] POST /api/github-releases/upload-pdf', {
                 apiBaseURL: api.defaults?.baseURL,
@@ -327,21 +305,7 @@ export default function AdminPanel() {
                 formPayload.append(key, value);
             });
             if (editPdfFile) {
-                const { data: signed } = await api.post('/api/github-releases/signed-upload', {
-                    filename: editPdfFile.name,
-                    contentType: editPdfFile.type || 'application/pdf'
-                });
-                const putResp = await fetch(signed.signedUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': editPdfFile.type || 'application/pdf',
-                        'x-upsert': 'true'
-                    },
-                    body: editPdfFile
-                });
-                if (!putResp.ok) throw new Error(`Signed upload failed (status ${putResp.status})`);
-                const storagePath = signed.path;
-                formPayload.append('storage_path', storagePath);
+                formPayload.append('pdf', editPdfFile);
             }
             if (editCoverFile) formPayload.append('cover_image', editCoverFile);
 
