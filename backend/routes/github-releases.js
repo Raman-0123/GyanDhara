@@ -460,12 +460,25 @@ router.post('/upload-pdf',
 router.get('/pdfs', asyncHandler(async (req, res) => {
     const { topic_id } = req.query;
 
-    try {
+    if (!Number.isInteger(assetIdNum)) {
         const supabase = requireSupabase();
         let query = supabase
             .from('topic_books')
             .select('*')
             .eq('is_active', true)
+        const ghResponse = await axios({
+            url: liveMetadata.url,
+            method: 'GET',
+            responseType: 'stream',
+            headers: {
+                Accept: 'application/octet-stream',
+                Authorization: GITHUB_TOKEN ? `token ${GITHUB_TOKEN}` : undefined,
+                'User-Agent': 'GyanDhara-PDF-Proxy'
+            },
+            maxRedirects: 5,
+            maxBodyLength: Infinity,
+            timeout: 0
+        });
             .order('display_order');
 
         if (topic_id) {
@@ -497,11 +510,26 @@ router.get('/pdfs', asyncHandler(async (req, res) => {
     }
 }));
 
-/**
- * POST /api/github-releases/migrate-all
- * Migrate all non-GitHub PDFs to GitHub Releases
- * Requires admin authentication
- */
+try {
+    await pipeline(ghResponse.data, res);
+} catch (err) {
+    // Client aborted or network hiccup; avoid double-sending headers
+    const isAbort = err?.message === 'aborted' || err?.code === 'ECONNRESET' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE';
+    console.warn('[asset-stream] stream interrupted', { assetId, isAbort, code: err?.code, message: err?.message });
+
+    if (!res.headersSent) {
+        // If nothing was sent yet, send a minimal status to close the response
+        return res.status(isAbort ? 499 : 502).end();
+    }
+
+    // If headers are already out, just end the response; don't bubble to the error handler
+    if (!res.writableEnded) res.end();
+    if (!isAbort) return next(err);
+}
+ * POST / api / github - releases / migrate - all
+    * Migrate all non - GitHub PDFs to GitHub Releases
+        * Requires admin authentication
+            */
 router.post('/migrate-all',
     authenticateToken,
     requireAdmin,
@@ -705,7 +733,7 @@ router.put('/pdf/:id',
  * GET /api/github-releases/asset/:assetId
  * Stream a GitHub Release asset inline for PDF viewing
  */
-router.get('/asset/:assetId', asyncHandler(async (req, res) => {
+router.get('/asset/:assetId', asyncHandler(async (req, res, next) => {
     const { assetId } = req.params;
     const assetIdNum = Number(assetId);
 
@@ -762,7 +790,19 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${liveMetadata.name || 'document.pdf'}"`);
     res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
 
-    await pipeline(ghResponse.data, res);
+    try {
+        await pipeline(ghResponse.data, res);
+    } catch (err) {
+        const isAbort = err?.message === 'aborted' || err?.code === 'ECONNRESET' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE';
+        console.warn('[asset-stream] stream interrupted', { assetId, isAbort, code: err?.code, message: err?.message });
+
+        if (!res.headersSent) {
+            return res.status(isAbort ? 499 : 502).end();
+        }
+
+        if (!res.writableEnded) res.end();
+        if (!isAbort) return next(err);
+    }
 }));
 
 /**

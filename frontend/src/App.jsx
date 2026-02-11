@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ThemeGallery from './pages/ThemeGallery';
@@ -22,8 +23,8 @@ function App() {
                 <ErrorBoundary>
                     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
                         <Routes>
-                            {/* Auth entry points (no navbar) */}
-                            <Route path="/" element={<Login />} />
+                            {/* Public entry points (no navbar) */}
+                            <Route path="/" element={<Landing />} />
                             <Route path="/login" element={<Login />} />
                             <Route path="/signup" element={<Signup />} />
 

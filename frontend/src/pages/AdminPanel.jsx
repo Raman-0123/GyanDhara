@@ -21,9 +21,12 @@ export default function AdminPanel() {
     const navigate = useNavigate();
     const { user, isAdmin, loading: authLoading } = useAuth();
     const [themes, setThemes] = useState([]);
+    const [topics, setTopics] = useState([]);
+    const [lessons, setLessons] = useState([]);
     const [books, setBooks] = useState([]);
     const [booksLoading, setBooksLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [themeFilter, setThemeFilter] = useState('');
     const [themesError, setThemesError] = useState('');
     const [booksError, setBooksError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -60,6 +63,14 @@ export default function AdminPanel() {
     const [saving, setSaving] = useState(false);
     const hasLoadedRef = useRef(false);
     const [migrating, setMigrating] = useState(false);
+    const [lessonForm, setLessonForm] = useState({
+        topic_id: '',
+        title: '',
+        position: 1,
+        content_text: ''
+    });
+    const [lessonsLoading, setLessonsLoading] = useState(false);
+    const [lessonSaving, setLessonSaving] = useState(false);
 
     useEffect(() => {
         if (authLoading) return;
@@ -77,6 +88,7 @@ export default function AdminPanel() {
         hasLoadedRef.current = true;
         // Fetch data only after auth check passes
         fetchThemes();
+        fetchTopics();
         fetchUploadStats();
         fetchBooks();
     }, [user, isAdmin, authLoading, navigate]);
@@ -112,6 +124,16 @@ export default function AdminPanel() {
             console.error('Failed to fetch stats:', error);
             // Never pass non-strings into toast - it can crash React in production builds.
             toast.error(toErrorString(raw) || 'Failed to fetch stats');
+        }
+    };
+
+    const fetchTopics = async () => {
+        try {
+            const response = await api.get('/api/topics');
+            setTopics(response.data.topics || []);
+        } catch (error) {
+            console.error('Failed to fetch topics:', error);
+            toast.error('Failed to load topics');
         }
     };
 
@@ -171,6 +193,8 @@ export default function AdminPanel() {
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        const useSupabaseUpload = (import.meta.env.VITE_UPLOAD_VIA_SUPABASE ?? 'true') !== 'false';
+
         // Validation
         if (!formData.theme_id || !formData.title || !pdfFile) {
             toast.error('Please fill in all required fields (Theme, Title, PDF)');
@@ -183,15 +207,50 @@ export default function AdminPanel() {
         }
 
         setUploading(true);
-        const uploadToast = toast.loading('Uploading PDF to GitHub Releases...');
+        const uploadToast = toast.loading('Uploading PDF (prep)...');
 
         try {
-            // Create FormData with direct PDF upload to backend
+            let storagePath = null;
+            let strategy = useSupabaseUpload ? 'supabase' : 'direct';
+
+            if (strategy === 'supabase') {
+                try {
+                    const { data: signed } = await api.post('/api/github-releases/signed-upload', {
+                        filename: pdfFile.name,
+                        contentType: pdfFile.type || 'application/pdf'
+                    });
+
+                    const putResp = await fetch(signed.signedUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': pdfFile.type || 'application/pdf',
+                            'x-upsert': 'true'
+                        },
+                        body: pdfFile
+                    });
+
+                    if (!putResp.ok) {
+                        const errText = await putResp.text().catch(() => '');
+                        throw new Error(`Supabase signed upload failed (${putResp.status}): ${errText || putResp.statusText}`);
+                    }
+
+                    storagePath = signed.path;
+                } catch (supabaseErr) {
+                    console.warn('[AdminUpload] Supabase upload failed, falling back to direct upload', supabaseErr);
+                    strategy = 'direct';
+                }
+            }
+
+            // Create FormData targeting backend
             const data = new FormData();
             Object.keys(formData).forEach(key => {
                 data.append(key, formData[key]);
             });
-            data.append('pdf', pdfFile);
+            if (strategy === 'supabase' && storagePath) {
+                data.append('storage_path', storagePath);
+            } else {
+                data.append('pdf', pdfFile);
+            }
             if (coverFile) data.append('cover_image', coverFile);
 
             console.info('[AdminUpload] POST /api/github-releases/upload-pdf', {
@@ -199,7 +258,9 @@ export default function AdminPanel() {
                 theme_id: formData.theme_id,
                 title: formData.title,
                 pdf: pdfFile ? { name: pdfFile.name, size: pdfFile.size, type: pdfFile.type } : null,
-                cover: coverFile ? { name: coverFile.name, size: coverFile.size, type: coverFile.type } : null
+                cover: coverFile ? { name: coverFile.name, size: coverFile.size, type: coverFile.type } : null,
+                strategy,
+                storagePath
             });
 
             // Upload to GitHub Releases API
@@ -207,7 +268,7 @@ export default function AdminPanel() {
                 timeout: 300000 // 5 minute timeout for large files
             });
 
-            toast.success('PDF uploaded successfully!', { id: uploadToast });
+            toast.success(`PDF uploaded via ${strategy === 'supabase' ? 'Supabase temp' : 'direct'} successfully!`, { id: uploadToast });
 
             // Reset form
             setFormData({
@@ -252,16 +313,19 @@ export default function AdminPanel() {
 
     const filteredBooks = useMemo(() => {
         const query = searchTerm.trim().toLowerCase();
-        if (!query) return books;
         return books.filter((book) => {
-            return (
+            const matchesSearch = !query ||
                 book.title?.toLowerCase().includes(query) ||
                 book.author?.toLowerCase().includes(query) ||
                 book.publisher?.toLowerCase().includes(query) ||
-                book.isbn?.toLowerCase().includes(query)
-            );
+                book.isbn?.toLowerCase().includes(query);
+
+            const bookThemeId = book.topic_id || book.theme_id || book.themeId;
+            const matchesTheme = !themeFilter || bookThemeId === themeFilter;
+
+            return matchesSearch && matchesTheme;
         });
-    }, [books, searchTerm]);
+    }, [books, searchTerm, themeFilter]);
 
     const openEditModal = (book) => {
         setSelectedBook(book);
@@ -298,6 +362,8 @@ export default function AdminPanel() {
         e.preventDefault();
         if (!selectedBook) return;
 
+        const useSupabaseUpload = (import.meta.env.VITE_UPLOAD_VIA_SUPABASE ?? 'true') !== 'false';
+
         try {
             setSaving(true);
             const formPayload = new FormData();
@@ -305,7 +371,42 @@ export default function AdminPanel() {
                 formPayload.append(key, value);
             });
             if (editPdfFile) {
-                formPayload.append('pdf', editPdfFile);
+                let storagePath = null;
+                let strategy = useSupabaseUpload ? 'supabase' : 'direct';
+
+                if (strategy === 'supabase') {
+                    try {
+                        const { data: signed } = await api.post('/api/github-releases/signed-upload', {
+                            filename: editPdfFile.name,
+                            contentType: editPdfFile.type || 'application/pdf'
+                        });
+
+                        const putResp = await fetch(signed.signedUrl, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': editPdfFile.type || 'application/pdf',
+                                'x-upsert': 'true'
+                            },
+                            body: editPdfFile
+                        });
+
+                        if (!putResp.ok) {
+                            const errText = await putResp.text().catch(() => '');
+                            throw new Error(`Supabase signed upload failed (${putResp.status}): ${errText || putResp.statusText}`);
+                        }
+
+                        storagePath = signed.path;
+                    } catch (supabaseErr) {
+                        console.warn('[AdminEditUpload] Supabase upload failed, falling back to direct upload', supabaseErr);
+                        strategy = 'direct';
+                    }
+                }
+
+                if (strategy === 'supabase' && storagePath) {
+                    formPayload.append('storage_path', storagePath);
+                } else {
+                    formPayload.append('pdf', editPdfFile);
+                }
             }
             if (editCoverFile) formPayload.append('cover_image', editCoverFile);
 
@@ -322,6 +423,61 @@ export default function AdminPanel() {
             toast.error(toErrorString(raw) || 'Failed to update book');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const fetchLessons = async (topicId) => {
+        if (!topicId) {
+            setLessons([]);
+            return;
+        }
+        try {
+            setLessonsLoading(true);
+            const response = await api.get(`/api/lessons/topic/${topicId}`);
+            setLessons(response.data.lessons || []);
+        } catch (error) {
+            console.error('Failed to fetch lessons:', error);
+            toast.error('Failed to load lessons');
+        } finally {
+            setLessonsLoading(false);
+        }
+    };
+
+    const handleLessonFormChange = (e) => {
+        const { name, value } = e.target;
+        setLessonForm((prev) => ({
+            ...prev,
+            [name]: name === 'position' ? Number(value) : value
+        }));
+    };
+
+    const handleLessonSubmit = async (e) => {
+        e.preventDefault();
+        if (!lessonForm.topic_id || !lessonForm.title || !lessonForm.position || !lessonForm.content_text) {
+            toast.error('Please fill topic, title, position, and content');
+            return;
+        }
+        try {
+            setLessonSaving(true);
+            const form = new FormData();
+            form.append('topic_id', lessonForm.topic_id);
+            form.append('position', lessonForm.position);
+            form.append('title', lessonForm.title);
+            form.append('content_text', lessonForm.content_text);
+
+            await api.post('/api/lessons', form, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            toast.success('Lesson added');
+            setLessonForm({ topic_id: lessonForm.topic_id, title: '', position: lessonForm.position + 1, content_text: '' });
+            fetchLessons(lessonForm.topic_id);
+        } catch (error) {
+            console.error('Failed to add lesson:', error);
+            const raw = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Failed to add lesson';
+            toast.error(raw);
+        } finally {
+            setLessonSaving(false);
         }
     };
 
@@ -640,6 +796,16 @@ export default function AdminPanel() {
                                 placeholder="Search by title, author, publisher, ISBN"
                                 className="w-full md:w-72 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                             />
+                            <select
+                                value={themeFilter}
+                                onChange={(e) => setThemeFilter(e.target.value)}
+                                className="w-full md:w-48 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            >
+                                <option value="">All themes</option>
+                                {themes.map((theme) => (
+                                    <option key={theme.id} value={theme.id}>{theme.name}</option>
+                                ))}
+                            </select>
                             <button
                                 type="button"
                                 onClick={handleMigrateAll}
@@ -654,71 +820,218 @@ export default function AdminPanel() {
                     {booksLoading ? (
                         <div className="py-8 text-center text-gray-600 dark:text-gray-300">Loading books...</div>
                     ) : (
-                        <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left">Title</th>
-                                        <th className="px-4 py-3 text-left">Author</th>
-                                        <th className="px-4 py-3 text-left">Size</th>
-                                        <th className="px-4 py-3 text-left">Status</th>
-                                        <th className="px-4 py-3 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {filteredBooks.length === 0 ? (
+                        <>
+                            {/* Desktop Table */}
+                            <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                                <table className="min-w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
                                         <tr>
-                                            <td colSpan="5" className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-                                                No books found.
-                                            </td>
+                                            <th className="px-4 py-3 text-left">Title</th>
+                                            <th className="px-4 py-3 text-left">Author</th>
+                                            <th className="px-4 py-3 text-left">Size</th>
+                                            <th className="px-4 py-3 text-left">Status</th>
+                                            <th className="px-4 py-3 text-right">Actions</th>
                                         </tr>
-                                    ) : (
-                                        filteredBooks.map((book) => (
-                                            <tr key={book.id} className="bg-white dark:bg-gray-800">
-                                                <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                                    {book.title}
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                                    {book.author || '-'}
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                                    {book.file_size_bytes ? `${(book.file_size_bytes / (1024 * 1024)).toFixed(2)} MB` : '-'}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${book.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                                                        {book.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-right space-x-2">
-                                                    <button
-                                                        onClick={() => openEditModal(book)}
-                                                        className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleToggleActive(book)}
-                                                        className="px-3 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600"
-                                                    >
-                                                        {book.is_active ? 'Disable' : 'Enable'}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(book)}
-                                                        className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
-                                                    >
-                                                        Delete
-                                                    </button>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {filteredBooks.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                                                    No books found.
                                                 </td>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                        ) : (
+                                            filteredBooks.map((book) => (
+                                                <tr key={book.id} className="bg-white dark:bg-gray-800">
+                                                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                                                        {book.title}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                                        {book.author || '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                                        {book.file_size_bytes ? `${(book.file_size_bytes / (1024 * 1024)).toFixed(2)} MB` : '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${book.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                            {book.is_active ? 'Active' : 'Inactive'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right space-x-2">
+                                                        <button
+                                                            onClick={() => openEditModal(book)}
+                                                            className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleToggleActive(book)}
+                                                            className="px-3 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600"
+                                                        >
+                                                            {book.is_active ? 'Disable' : 'Enable'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(book)}
+                                                            className="px-3 py-1 rounded-md bg-red-600 text-white hover:bg-red-700"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile Cards */}
+                            <div className="md:hidden space-y-4">
+                                {filteredBooks.length === 0 ? (
+                                    <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400">
+                                        No books found.
+                                    </div>
+                                ) : (
+                                    filteredBooks.map((book) => (
+                                        <div key={book.id} className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm space-y-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-base font-semibold text-gray-900 dark:text-white">{book.title}</p>
+                                                    <p className="text-sm text-gray-600 dark:text-gray-300">{book.author || 'Unknown author'}</p>
+                                                </div>
+                                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${book.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {book.is_active ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </div>
+                                            <div className="text-sm text-gray-600 dark:text-gray-300">
+                                                Size: {book.file_size_bytes ? `${(book.file_size_bytes / (1024 * 1024)).toFixed(2)} MB` : '-'}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => openEditModal(book)}
+                                                    className="flex-1 min-w-[45%] px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 active:scale-95"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => handleToggleActive(book)}
+                                                    className="flex-1 min-w-[45%] px-3 py-2 rounded-md bg-amber-500 text-white hover:bg-amber-600 active:scale-95"
+                                                >
+                                                    {book.is_active ? 'Disable' : 'Enable'}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(book)}
+                                                    className="w-full px-3 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 active:scale-95"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </>
                     )}
                     {booksError && (
                         <p className="mt-3 text-sm text-red-500">{booksError}</p>
                     )}
+                </div>
+
+                {/* Manage Lessons */}
+                <div className="mt-12">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Manage Lessons</h2>
+                        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                            <select
+                                name="topic_id"
+                                value={lessonForm.topic_id}
+                                onChange={(e) => {
+                                    handleLessonFormChange(e);
+                                    fetchLessons(e.target.value);
+                                }}
+                                className="w-full md:w-72 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            >
+                                <option value="">Select topic</option>
+                                {topics.map((topic) => (
+                                    <option key={topic.id} value={topic.id}>{topic.title}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <form onSubmit={handleLessonSubmit} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 space-y-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Lesson</h3>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                                <input
+                                    name="title"
+                                    value={lessonForm.title}
+                                    onChange={handleLessonFormChange}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Position (1-based)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    name="position"
+                                    value={lessonForm.position}
+                                    onChange={handleLessonFormChange}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content</label>
+                                <textarea
+                                    name="content_text"
+                                    value={lessonForm.content_text}
+                                    onChange={handleLessonFormChange}
+                                    rows={6}
+                                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                                    placeholder="Plain text or paste HTML"
+                                    required
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={lessonSaving}
+                                className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {lessonSaving ? 'Saving...' : 'Save Lesson'}
+                            </button>
+                        </form>
+
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Lessons for topic</h3>
+                                {lessonsLoading && <span className="text-sm text-gray-500">Loading...</span>}
+                            </div>
+                            {lessonForm.topic_id ? (
+                                lessons.length === 0 ? (
+                                    <p className="text-gray-600 dark:text-gray-400">No lessons yet for this topic.</p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {lessons.map((lesson) => (
+                                            <div key={lesson.id} className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{lesson.position}. {lesson.title}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{lesson.content_text?.slice(0, 160) || 'No content'}</p>
+                                                    </div>
+                                                    <span className="text-xs text-gray-500">ID: {lesson.id?.slice(0, 6)}...</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )
+                            ) : (
+                                <p className="text-gray-600 dark:text-gray-400">Select a topic to view lessons.</p>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

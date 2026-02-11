@@ -126,9 +126,9 @@ export default function TopicList() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="mb-8 flex gap-4 flex-wrap"
+                    className="mb-8 flex flex-col md:flex-row gap-4"
                 >
-                    <div className="flex-1 min-w-[300px] relative">
+                    <div className="w-full md:flex-1 min-w-0 relative">
                         <input
                             type="text"
                             value={searchQuery}
@@ -143,7 +143,7 @@ export default function TopicList() {
                     <select
                         value={difficulty}
                         onChange={(e) => setDifficulty(e.target.value)}
-                        className="px-6 py-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white bg-white cursor-pointer text-lg"
+                        className="w-full md:w-auto px-6 py-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white bg-white cursor-pointer text-lg"
                     >
                         <option value="">All Levels</option>
                         <option value="easy">Easy</option>
@@ -155,7 +155,7 @@ export default function TopicList() {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={handleSearch}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
+                        className="w-full md:w-auto bg-gradient-to-r from-primary-600 to-secondary-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:shadow-xl transition-all"
                     >
                         Search
                     </motion.button>

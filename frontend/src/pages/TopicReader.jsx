@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { Menu, X } from 'lucide-react';
 import api from '../services/api';
 import PDFViewer from '../components/PDFViewer';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +24,7 @@ const TopicReader = () => {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('pdf'); // Default to PDF tab
     const [showPDFModal, setShowPDFModal] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     // Translation state
     const [selectedLanguage, setSelectedLanguage] = useState('original');
@@ -342,10 +344,28 @@ const TopicReader = () => {
             {/* Main Content Area */}
             <div className="max-w-7xl mx-auto px-4 py-6">
                 {activeTab === 'lessons' && (
-                    <div className="flex gap-6">
+                    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 relative">
+                        {/* Mobile Sidebar Toggle Button */}
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="lg:hidden fixed bottom-6 right-6 z-30 p-4 bg-primary-600 text-white rounded-full shadow-2xl hover:bg-primary-700 active:scale-95 transition-all"
+                            aria-label="Toggle course content"
+                        >
+                            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                        </button>
+
+                        {/* Mobile Overlay */}
+                        {isSidebarOpen && (
+                            <div
+                                className="lg:hidden fixed inset-0 bg-black/50 z-20"
+                                onClick={() => setIsSidebarOpen(false)}
+                            />
+                        )}
+
                         {/* Left Sidebar - Lessons List */}
-                        <div className="w-80 flex-shrink-0">
-                            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
+                        <div className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                            } lg:translate-x-0 fixed lg:static top-0 left-0 bottom-0 w-80 lg:w-80 flex-shrink-0 z-30 lg:z-0 transition-transform duration-300 lg:transition-none`}>
+                            <div className="bg-white dark:bg-gray-800 rounded-none lg:rounded-xl shadow-lg p-4 h-full lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] overflow-y-auto">
                                 <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
                                     Course Content
                                 </h2>
@@ -362,6 +382,7 @@ const TopicReader = () => {
                                                     setCurrentLessonIndex(index);
                                                     setSelectedLanguage('original');
                                                     setTranslatedContent({});
+                                                    setIsSidebarOpen(false); // Close sidebar on mobile after selection
                                                 }}
                                                 className={`w-full text-left p-3 rounded-lg transition-colors ${currentLessonIndex === index
                                                     ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
@@ -536,7 +557,7 @@ const TopicReader = () => {
                                     </div>
                                 )}
 
-                                <div className="flex justify-between items-center mb-6">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                                     <div>
                                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                                             📄 {books[currentBookIndex].title}
@@ -549,12 +570,12 @@ const TopicReader = () => {
                                     </div>
                                     <button
                                         onClick={() => setShowPDFModal(true)}
-                                        className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-lg shadow-lg"
+                                        className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-bold rounded-lg shadow-lg active:scale-95"
                                     >
                                         🖥️ Fullscreen
                                     </button>
                                 </div>
-                                <div className="w-full h-[800px] border-4 border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                                <div className="w-full h-[60vh] md:h-[70vh] lg:h-[800px] border-4 border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-gray-50 dark:bg-gray-900">
                                     <iframe
                                         src={getBookPdfUrl(books[currentBookIndex])}
                                         className="w-full h-full"
@@ -564,18 +585,18 @@ const TopicReader = () => {
                             </div>
                         ) : topic.pdf_url ? (
                             <div>
-                                <div className="flex justify-between items-center mb-6">
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
                                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                                         📄 {topic.pdf_filename || 'Document'}
                                     </h2>
                                     <button
                                         onClick={() => setShowPDFModal(true)}
-                                        className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold rounded-lg shadow-lg"
+                                        className="w-full md:w-auto px-6 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-white font-bold rounded-lg shadow-lg active:scale-95"
                                     >
                                         🖥️ Fullscreen
                                     </button>
                                 </div>
-                                <div className="w-full h-[800px] border-4 border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                                <div className="w-full h-[60vh] md:h-[70vh] lg:h-[800px] border-4 border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-gray-50 dark:bg-gray-900">
                                     <iframe
                                         src={resolveAssetUrl(topic.pdf_url)}
                                         className="w-full h-full"
