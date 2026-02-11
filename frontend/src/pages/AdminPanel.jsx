@@ -192,11 +192,19 @@ export default function AdminPanel() {
                 contentType: pdfFile.type || 'application/pdf'
             });
 
-            // Step 2: upload file using Supabase helper (handles token)
-            const { error: uploadErr } = await supabase.storage
-                .from('books')
-                .uploadToSignedUrl(signed.path, signed.token, pdfFile);
-            if (uploadErr) throw uploadErr;
+            // Step 2: upload file directly to the signed URL (append token)
+            const uploadUrl = `${signed.signedUrl}?token=${signed.token}`;
+            const putResp = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': pdfFile.type || 'application/pdf',
+                    'x-upsert': 'true'
+                },
+                body: pdfFile
+            });
+            if (!putResp.ok) {
+                throw new Error(`Signed upload failed (status ${putResp.status})`);
+            }
             const storagePath = signed.path;
 
             // Create FormData
@@ -324,10 +332,16 @@ export default function AdminPanel() {
                     filename: editPdfFile.name,
                     contentType: editPdfFile.type || 'application/pdf'
                 });
-                const { error: uploadErr } = await supabase.storage
-                    .from('books')
-                    .uploadToSignedUrl(signed.path, signed.token, editPdfFile);
-                if (uploadErr) throw uploadErr;
+                const uploadUrl = `${signed.signedUrl}?token=${signed.token}`;
+                const putResp = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': editPdfFile.type || 'application/pdf',
+                        'x-upsert': 'true'
+                    },
+                    body: editPdfFile
+                });
+                if (!putResp.ok) throw new Error(`Signed upload failed (status ${putResp.status})`);
                 const storagePath = signed.path;
                 formPayload.append('storage_path', storagePath);
             }
