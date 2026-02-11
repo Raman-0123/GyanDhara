@@ -459,26 +459,13 @@ router.post('/upload-pdf',
  */
 router.get('/pdfs', asyncHandler(async (req, res) => {
     const { topic_id } = req.query;
+    const supabase = requireSupabase();
 
-    if (!Number.isInteger(assetIdNum)) {
-        const supabase = requireSupabase();
+    try {
         let query = supabase
             .from('topic_books')
             .select('*')
             .eq('is_active', true)
-        const ghResponse = await axios({
-            url: liveMetadata.url,
-            method: 'GET',
-            responseType: 'stream',
-            headers: {
-                Accept: 'application/octet-stream',
-                Authorization: GITHUB_TOKEN ? `token ${GITHUB_TOKEN}` : undefined,
-                'User-Agent': 'GyanDhara-PDF-Proxy'
-            },
-            maxRedirects: 5,
-            maxBodyLength: Infinity,
-            timeout: 0
-        });
             .order('display_order');
 
         if (topic_id) {
@@ -486,13 +473,12 @@ router.get('/pdfs', asyncHandler(async (req, res) => {
         }
 
         const { data: books, error } = await query;
-
         if (error) throw error;
 
-        res.json({
+        return res.json({
             success: true,
             count: books.length,
-            books: books.map(book => ({
+            books: books.map((book) => ({
                 ...book,
                 file_size_mb: (book.file_size_bytes / (1024 * 1024)).toFixed(2),
                 is_github_release: book.storage_type === 'github_release'
@@ -510,26 +496,11 @@ router.get('/pdfs', asyncHandler(async (req, res) => {
     }
 }));
 
-try {
-    await pipeline(ghResponse.data, res);
-} catch (err) {
-    // Client aborted or network hiccup; avoid double-sending headers
-    const isAbort = err?.message === 'aborted' || err?.code === 'ECONNRESET' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE';
-    console.warn('[asset-stream] stream interrupted', { assetId, isAbort, code: err?.code, message: err?.message });
-
-    if (!res.headersSent) {
-        // If nothing was sent yet, send a minimal status to close the response
-        return res.status(isAbort ? 499 : 502).end();
-    }
-
-    // If headers are already out, just end the response; don't bubble to the error handler
-    if (!res.writableEnded) res.end();
-    if (!isAbort) return next(err);
-}
- * POST / api / github - releases / migrate - all
-    * Migrate all non - GitHub PDFs to GitHub Releases
-        * Requires admin authentication
-            */
+/**
+ * POST /api/github-releases/migrate-all
+ * Migrate all non-GitHub PDFs to GitHub Releases
+ * Requires admin authentication
+ */
 router.post('/migrate-all',
     authenticateToken,
     requireAdmin,
