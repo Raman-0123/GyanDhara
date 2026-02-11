@@ -3,7 +3,9 @@ const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Use memory storage; we'll push files to Supabase Storage (persist across deployments)
 const upload = multer({
@@ -276,5 +278,75 @@ router.delete('/:id', asyncHandler(async (req, res) => {
         message: 'Book deleted successfully'
     });
 }));
+
+// Admin-only: migrate legacy cover_image_url entries that point to /uploads/books into Supabase Storage
+router.post('/migrate-missing-covers',
+    authenticateToken,
+    requireAdmin,
+    asyncHandler(async (_req, res) => {
+        const { data: books, error } = await supabase
+            .from('topic_books')
+            .select('id, title, cover_image_url')
+            .or('cover_image_url.is.null,cover_image_url.ilike./uploads/%');
+
+        if (error) throw error;
+
+        let updated = 0;
+        let missingFile = 0;
+        let skipped = 0;
+        const errors = [];
+
+        for (const book of books) {
+            const coverUrl = book.cover_image_url || '';
+            const match = coverUrl.match(/\/uploads\/books\/(.+)$/);
+            if (!match) {
+                skipped += 1;
+                continue;
+            }
+
+            const filename = match[1];
+            const filePath = path.join(__dirname, '../uploads/books', filename);
+
+            if (!fs.existsSync(filePath)) {
+                missingFile += 1;
+                errors.push({ id: book.id, title: book.title, error: 'file_not_found', filePath });
+                continue;
+            }
+
+            try {
+                const buffer = await fs.promises.readFile(filePath);
+                const { error: uploadError } = await supabase.storage
+                    .from('books')
+                    .upload(`books/covers/${filename}`, buffer, {
+                        contentType: 'image/png',
+                        upsert: true
+                    });
+
+                if (uploadError) throw uploadError;
+
+                const { data } = supabase.storage.from('books').getPublicUrl(`books/covers/${filename}`);
+
+                const { error: updateError } = await supabase
+                    .from('topic_books')
+                    .update({ cover_image_url: data.publicUrl })
+                    .eq('id', book.id);
+
+                if (updateError) throw updateError;
+
+                updated += 1;
+            } catch (err) {
+                errors.push({ id: book.id, title: book.title, error: err.message });
+            }
+        }
+
+        res.json({
+            success: true,
+            updated,
+            missingFile,
+            skipped,
+            errors
+        });
+    })
+);
 
 module.exports = router;

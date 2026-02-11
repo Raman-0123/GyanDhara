@@ -39,7 +39,8 @@ if (IS_VERCEL) {
 // Normalize the path so existing routes keep working in all environments.
 if (IS_VERCEL) {
     app.use((req, res, next) => {
-        if (!req.url.startsWith('/api')) {
+        // Do not rewrite static asset paths like /uploads; only add /api for our API routes.
+        if (!req.url.startsWith('/api') && !req.url.startsWith('/uploads')) {
             req.url = `/api${req.url}`;
         }
         next();
