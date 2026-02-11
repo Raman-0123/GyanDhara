@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
-import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
 function toErrorString(value) {
@@ -186,17 +185,24 @@ export default function AdminPanel() {
         const uploadToast = toast.loading('Uploading PDF to GitHub Releases...');
 
         try {
-            // Always pre-upload to Supabase Storage to keep API payload tiny (avoids Vercel 4.5MB limit)
-            const path = `github-temp/${Date.now()}-${Math.round(Math.random() * 1e9)}-${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-            const { error: uploadErr, data } = await supabase.storage
-                .from('books')
-                .upload(path, pdfFile, {
-                    cacheControl: '3600',
-                    upsert: true,
-                    contentType: pdfFile.type || 'application/pdf'
-                });
-            if (uploadErr) throw uploadErr;
-            const storagePath = data?.path || path;
+            // Step 1: get signed upload URL from backend (uses service role, bypasses RLS)
+            const { data: signed } = await api.post('/api/github-releases/signed-upload', {
+                filename: pdfFile.name,
+                contentType: pdfFile.type || 'application/pdf'
+            });
+
+            // Step 2: upload file directly to Supabase Storage via signed URL
+            const putResp = await fetch(signed.signedUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': pdfFile.type || 'application/pdf'
+                },
+                body: pdfFile
+            });
+            if (!putResp.ok) {
+                throw new Error(`Signed upload failed (status ${putResp.status})`);
+            }
+            const storagePath = signed.path;
 
             // Create FormData
             const data = new FormData();
@@ -319,16 +325,17 @@ export default function AdminPanel() {
                 formPayload.append(key, value);
             });
             if (editPdfFile) {
-                const path = `github-temp/${Date.now()}-${Math.round(Math.random() * 1e9)}-${editPdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-                const { error: uploadErr, data } = await supabase.storage
-                    .from('books')
-                    .upload(path, editPdfFile, {
-                        cacheControl: '3600',
-                        upsert: true,
-                        contentType: editPdfFile.type || 'application/pdf'
-                    });
-                if (uploadErr) throw uploadErr;
-                const storagePath = data?.path || path;
+                const { data: signed } = await api.post('/api/github-releases/signed-upload', {
+                    filename: editPdfFile.name,
+                    contentType: editPdfFile.type || 'application/pdf'
+                });
+                const putResp = await fetch(signed.signedUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': editPdfFile.type || 'application/pdf' },
+                    body: editPdfFile
+                });
+                if (!putResp.ok) throw new Error(`Signed upload failed (status ${putResp.status})`);
+                const storagePath = signed.path;
                 formPayload.append('storage_path', storagePath);
             }
             if (editCoverFile) formPayload.append('cover_image', editCoverFile);

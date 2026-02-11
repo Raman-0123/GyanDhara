@@ -49,6 +49,43 @@ async function downloadStoragePathToTemp(storagePath) {
     return tempFile;
 }
 
+/**
+ * POST /api/github-releases/signed-upload
+ * Return a signed upload URL for the books bucket so the client can upload directly without RLS issues.
+ */
+router.post('/signed-upload',
+    authenticateToken,
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+        const supabase = requireSupabase();
+        const { filename, contentType } = req.body || {};
+
+        if (!filename) {
+            return res.status(400).json({ error: 'filename is required' });
+        }
+
+        const safeName = sanitizeFilename(filename);
+        const storagePath = buildStoragePath(safeName, 'github-temp');
+
+        const { data, error } = await supabase.storage
+            .from('books')
+            .createSignedUploadUrl(storagePath, 600); // 10 minutes
+
+        if (error) {
+            console.error('[signed-upload] error', error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        res.json({
+            success: true,
+            path: storagePath,
+            signedUrl: data.signedUrl,
+            expires_in: 600,
+            contentType: contentType || 'application/pdf'
+        });
+    })
+);
+
 // GitHub configuration
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Raman-0123';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'GyanDhara';
