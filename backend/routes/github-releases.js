@@ -5,7 +5,6 @@
 
 const express = require('express');
 const router = express.Router();
-const { Octokit } = require('@octokit/rest');
 const axios = require('axios');
 const multer = require('multer');
 const path = require('path');
@@ -21,11 +20,13 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Raman-0123';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'GyanDhara';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-
-// Initialize Octokit
-const octokit = new Octokit({
-    auth: GITHUB_TOKEN
-});
+let octokitInstance = null;
+async function getOctokit() {
+    if (octokitInstance) return octokitInstance;
+    const { Octokit } = await import('@octokit/rest');
+    octokitInstance = new Octokit({ auth: GITHUB_TOKEN });
+    return octokitInstance;
+}
 
 // Configure multer for large PDF uploads (up to 2GB)
 const upload = multer({
@@ -66,6 +67,7 @@ const upload = multer({
  */
 async function getOrCreateRelease(tagName = 'pdf-storage-v1') {
     try {
+        const octokit = await getOctokit();
         // Try to get existing release
         const { data: release } = await octokit.repos.getReleaseByTag({
             owner: GITHUB_OWNER,
@@ -75,6 +77,7 @@ async function getOrCreateRelease(tagName = 'pdf-storage-v1') {
         return release;
     } catch (error) {
         if (error.status === 404) {
+            const octokit = await getOctokit();
             // Create new release if it doesn't exist
             const { data: newRelease } = await octokit.repos.createRelease({
                 owner: GITHUB_OWNER,
@@ -103,6 +106,7 @@ async function uploadPDFToRelease(file, release, customName = null) {
     const filename = `${timestamp}-${sanitizedName}`;
 
     try {
+        const octokit = await getOctokit();
         // Upload asset to release
         const stream = fs.createReadStream(file.path);
         const { data: asset } = await octokit.repos.uploadReleaseAsset({
@@ -563,6 +567,7 @@ router.put('/pdf/:id',
 
             if (existing.storage_type === 'github_release' && existing.github_asset_id) {
                 try {
+                    const octokit = await getOctokit();
                     await octokit.repos.deleteReleaseAsset({
                         owner: GITHUB_OWNER,
                         repo: GITHUB_REPO,
@@ -625,6 +630,7 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         });
     }
 
+    const octokit = await getOctokit();
     const { data: metadata } = await octokit.repos.getReleaseAsset({
         owner: GITHUB_OWNER,
         repo: GITHUB_REPO,
@@ -676,6 +682,7 @@ router.delete('/pdf/:id',
         // Delete from GitHub Release if applicable
         if (book.storage_type === 'github_release' && book.github_asset_id) {
             try {
+                const octokit = await getOctokit();
                 await octokit.repos.deleteReleaseAsset({
                     owner: GITHUB_OWNER,
                     repo: GITHUB_REPO,
