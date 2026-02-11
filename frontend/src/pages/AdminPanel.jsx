@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
+import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
 function toErrorString(value) {
@@ -185,12 +186,32 @@ export default function AdminPanel() {
         const uploadToast = toast.loading('Uploading PDF to GitHub Releases...');
 
         try {
+            // If the PDF is larger than ~4MB, upload it to Supabase first to avoid Vercel body limits
+            let storagePath = null;
+            const pdfSizeMB = fileSize;
+            if (pdfFile && pdfSizeMB > 4) {
+                const path = `github-temp/${Date.now()}-${Math.round(Math.random() * 1e9)}-${pdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                const { error: uploadErr, data } = await supabase.storage
+                    .from('books')
+                    .upload(path, pdfFile, {
+                        cacheControl: '3600',
+                        upsert: true,
+                        contentType: pdfFile.type || 'application/pdf'
+                    });
+                if (uploadErr) throw uploadErr;
+                storagePath = data?.path || path;
+            }
+
             // Create FormData
             const data = new FormData();
             Object.keys(formData).forEach(key => {
                 data.append(key, formData[key]);
             });
-            data.append('pdf', pdfFile);
+            if (storagePath) {
+                data.append('storage_path', storagePath);
+            } else {
+                data.append('pdf', pdfFile);
+            }
             if (coverFile) {
                 data.append('cover_image', coverFile);
             }
@@ -305,7 +326,27 @@ export default function AdminPanel() {
             Object.entries(editForm).forEach(([key, value]) => {
                 formPayload.append(key, value);
             });
-            if (editPdfFile) formPayload.append('pdf', editPdfFile);
+            if (editPdfFile) {
+                const sizeMB = editPdfFile.size / (1024 * 1024);
+                let storagePath = null;
+                if (sizeMB > 4) {
+                    const path = `github-temp/${Date.now()}-${Math.round(Math.random() * 1e9)}-${editPdfFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                    const { error: uploadErr, data } = await supabase.storage
+                        .from('books')
+                        .upload(path, editPdfFile, {
+                            cacheControl: '3600',
+                            upsert: true,
+                            contentType: editPdfFile.type || 'application/pdf'
+                        });
+                    if (uploadErr) throw uploadErr;
+                    storagePath = data?.path || path;
+                }
+                if (storagePath) {
+                    formPayload.append('storage_path', storagePath);
+                } else {
+                    formPayload.append('pdf', editPdfFile);
+                }
+            }
             if (editCoverFile) formPayload.append('cover_image', editCoverFile);
 
             await api.put(`/api/github-releases/pdf/${selectedBook.id}`, formPayload, {

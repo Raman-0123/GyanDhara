@@ -20,6 +20,34 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 // Simple in-memory caches to avoid repeated GitHub API calls per asset
 const assetMetaCache = new Map(); // assetId -> { data, fetchedAt }
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_PDF_MB = 200;
+
+function sanitizeFilename(name) {
+    return (name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function buildStoragePath(filename, folder = 'github-temp') {
+    const safeFolder = folder && /^[a-zA-Z0-9_.\-/]+$/.test(folder) ? folder : 'github-temp';
+    return `${safeFolder}/${Date.now()}-${Math.round(Math.random() * 1e9)}-${sanitizeFilename(filename)}`;
+}
+
+async function downloadStoragePathToTemp(storagePath) {
+    if (!storagePath) throw new Error('storage_path is required');
+    const supabase = requireSupabase();
+
+    const { data: signed, error: signedError } = await supabase.storage
+        .from('books')
+        .createSignedUrl(storagePath, 600); // 10 minutes
+    if (signedError) throw signedError;
+
+    const tempFile = await downloadToTempFile(signed.signedUrl);
+    if (!tempFile.originalname || tempFile.originalname === 'document.pdf') {
+        tempFile.originalname = storagePath.split('/').pop() || 'document.pdf';
+    }
+    // Track source for logging/cleanup
+    tempFile.storagePath = storagePath;
+    return tempFile;
+}
 
 // GitHub configuration
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Raman-0123';
@@ -280,11 +308,14 @@ router.post('/upload-pdf',
             });
         }
 
-        // Validate required fields
-        if ((!topic_id && !theme_id) || !title || !req.files?.pdf?.[0]) {
+        // Validate required fields (accept either direct file or storage_path)
+        const hasDirectFile = Boolean(req.files?.pdf?.[0]);
+        const hasStoragePath = Boolean(req.body?.storage_path);
+
+        if ((!topic_id && !theme_id) || !title || (!hasDirectFile && !hasStoragePath)) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required fields: theme_id (or topic_id), title, and pdf file are required'
+                error: 'Missing required fields: theme_id (or topic_id), title, and pdf file or storage_path are required'
             });
         }
 
@@ -293,15 +324,19 @@ router.post('/upload-pdf',
             resolvedTopicId = await getOrCreateThemeBucketTopic(theme_id);
         }
 
-        const pdfFile = req.files.pdf[0];
+        // Either use uploaded file or fetch from Supabase Storage via signed URL
+        let pdfFile = req.files.pdf?.[0];
+        if (!pdfFile && req.body.storage_path) {
+            pdfFile = await downloadStoragePathToTemp(req.body.storage_path);
+        }
         const coverFile = req.files.cover_image?.[0];
 
         // Validate file size (200MB maximum)
         const fileSizeMB = pdfFile.size / (1024 * 1024);
-        if (fileSizeMB > 200) {
+        if (fileSizeMB > MAX_PDF_MB) {
             return res.status(400).json({
                 success: false,
-                error: `PDF file size (${fileSizeMB.toFixed(2)}MB) exceeds 200MB maximum limit`
+                error: `PDF file size (${fileSizeMB.toFixed(2)}MB) exceeds ${MAX_PDF_MB}MB maximum limit`
             });
         }
 
@@ -557,8 +592,15 @@ router.put('/pdf/:id',
             updateData.is_active = String(is_active).toLowerCase() === 'true';
         }
 
-        if (req.files?.pdf?.[0]) {
-            const pdfFile = req.files.pdf[0];
+        let tempPdfPath = null;
+
+        if (req.files?.pdf?.[0] || req.body?.storage_path) {
+            let pdfFile = req.files?.pdf?.[0];
+            if (!pdfFile && req.body.storage_path) {
+                pdfFile = await downloadStoragePathToTemp(req.body.storage_path);
+            }
+            tempPdfPath = pdfFile?.path;
+
             const fileSizeMB = pdfFile.size / (1024 * 1024);
             if (fileSizeMB > 200) {
                 return res.status(400).json({
@@ -611,6 +653,7 @@ router.put('/pdf/:id',
             message: 'Book updated successfully',
             book
         });
+        if (tempPdfPath) fs.unlink(tempPdfPath, () => { });
         if (req.files?.pdf?.[0]?.path) {
             fs.unlink(req.files.pdf[0].path, () => { });
         }
@@ -622,13 +665,10 @@ router.put('/pdf/:id',
 
 /**
  * GET /api/github-releases/asset/:assetId
- * Serve a GitHub Release asset for PDF viewing.
- * Default behavior: fast 302 redirect to GitHub CDN URL to leverage their edge caching.
- * Fallback proxy (add ?mode=proxy) keeps the stream inside our domain when needed.
+ * Stream a GitHub Release asset inline for PDF viewing
  */
 router.get('/asset/:assetId', asyncHandler(async (req, res) => {
     const { assetId } = req.params;
-    const { mode } = req.query;
     const assetIdNum = Number(assetId);
 
     if (!Number.isInteger(assetIdNum)) {
@@ -653,16 +693,16 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         assetMetaCache.set(assetIdNum, { data: metadata, fetchedAt: Date.now() });
     }
 
-    // Fast-path: redirect to GitHub's CDN URL unless proxy explicitly requested
-    if (mode !== 'proxy' && metadata?.browser_download_url) {
-        res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-        res.setHeader('CDN-Cache-Control', 'public, max-age=86400');
-        return res.redirect(302, metadata.browser_download_url);
-    }
+    const octokit = await getOctokit();
+    const { data: liveMetadata } = await octokit.repos.getReleaseAsset({
+        owner: GITHUB_OWNER,
+        repo: GITHUB_REPO,
+        asset_id: assetIdNum
+    });
 
     // Stream the asset directly from GitHub to the client (no buffering in memory)
     const ghResponse = await axios({
-        url: metadata.url,
+        url: liveMetadata.url,
         method: 'GET',
         responseType: 'stream',
         headers: {
@@ -675,12 +715,13 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         timeout: 0
     });
 
-    res.setHeader('Content-Type', metadata.content_type || 'application/pdf');
-    if (metadata.size) {
-        res.setHeader('Content-Length', metadata.size);
+    // Stream the asset directly from GitHub to the client (no buffering in memory)
+    res.setHeader('Content-Type', liveMetadata.content_type || 'application/pdf');
+    if (liveMetadata.size) {
+        res.setHeader('Content-Length', liveMetadata.size);
     }
-    res.setHeader('Content-Disposition', `inline; filename="${metadata.name || 'document.pdf'}"`);
-    // Allow browser + CDN caching for a day to improve PDF load speed
+    // Force inline view instead of download
+    res.setHeader('Content-Disposition', `inline; filename="${liveMetadata.name || 'document.pdf'}"`);
     res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
 
     await pipeline(ghResponse.data, res);
