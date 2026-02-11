@@ -192,9 +192,8 @@ export default function AdminPanel() {
                 contentType: pdfFile.type || 'application/pdf'
             });
 
-            // Step 2: upload file directly to the signed URL (append token)
-            const uploadUrl = `${signed.signedUrl}?token=${signed.token}`;
-            const putResp = await fetch(uploadUrl, {
+            // Step 2: upload file directly to the signed URL returned by backend
+            const putResp = await fetch(signed.signedUrl, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': pdfFile.type || 'application/pdf',
@@ -332,8 +331,7 @@ export default function AdminPanel() {
                     filename: editPdfFile.name,
                     contentType: editPdfFile.type || 'application/pdf'
                 });
-                const uploadUrl = `${signed.signedUrl}?token=${signed.token}`;
-                const putResp = await fetch(uploadUrl, {
+                const putResp = await fetch(signed.signedUrl, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': editPdfFile.type || 'application/pdf',
