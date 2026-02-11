@@ -38,6 +38,9 @@ const PDFViewer = ({ pdfUrl, isOpen, onClose }) => {
                         className="w-full h-full"
                         title="PDF Document"
                         style={{ border: 'none' }}
+                        loading="eager"
+                        allow="clipboard-read; clipboard-write"
+                        referrerPolicy="no-referrer"
                     />
                 </div>
             </div>

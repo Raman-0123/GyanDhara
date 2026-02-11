@@ -622,10 +622,13 @@ router.put('/pdf/:id',
 
 /**
  * GET /api/github-releases/asset/:assetId
- * Stream a GitHub Release asset inline for PDF viewing
+ * Serve a GitHub Release asset for PDF viewing.
+ * Default behavior: fast 302 redirect to GitHub CDN URL to leverage their edge caching.
+ * Fallback proxy (add ?mode=proxy) keeps the stream inside our domain when needed.
  */
 router.get('/asset/:assetId', asyncHandler(async (req, res) => {
     const { assetId } = req.params;
+    const { mode } = req.query;
     const assetIdNum = Number(assetId);
 
     if (!Number.isInteger(assetIdNum)) {
@@ -648,6 +651,13 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         });
         metadata = data;
         assetMetaCache.set(assetIdNum, { data: metadata, fetchedAt: Date.now() });
+    }
+
+    // Fast-path: redirect to GitHub's CDN URL unless proxy explicitly requested
+    if (mode !== 'proxy' && metadata?.browser_download_url) {
+        res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+        res.setHeader('CDN-Cache-Control', 'public, max-age=86400');
+        return res.redirect(302, metadata.browser_download_url);
     }
 
     // Stream the asset directly from GitHub to the client (no buffering in memory)

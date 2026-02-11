@@ -52,6 +52,7 @@ const TopicReader = () => {
     const getBookPdfUrl = (book) => {
         if (!book) return '';
         if (book.storage_type === 'github_release' && book.github_asset_id) {
+            // Default to fast redirect (uses GitHub's CDN). Proxy mode available via query param if ever needed.
             return `${apiBaseUrl}/api/github-releases/asset/${book.github_asset_id}`;
         }
         return resolveAssetUrl(book.pdf_url);
