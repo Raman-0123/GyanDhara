@@ -80,6 +80,7 @@ router.post('/signed-upload',
             success: true,
             path: storagePath,
             signedUrl: data.signedUrl,
+            token: data.token,
             expires_in: 600,
             contentType: contentType || 'application/pdf'
         });
