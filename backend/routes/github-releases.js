@@ -17,6 +17,10 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Simple in-memory caches to avoid repeated GitHub API calls per asset
+const assetMetaCache = new Map(); // assetId -> { data, fetchedAt }
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 // GitHub configuration
 const GITHUB_OWNER = process.env.GITHUB_OWNER || 'Raman-0123';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'GyanDhara';
@@ -631,12 +635,20 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         });
     }
 
-    const octokit = await getOctokit();
-    const { data: metadata } = await octokit.repos.getReleaseAsset({
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        asset_id: assetIdNum
-    });
+    let metadata = assetMetaCache.get(assetIdNum)?.data;
+    const cachedAt = assetMetaCache.get(assetIdNum)?.fetchedAt || 0;
+    const isCacheFresh = Date.now() - cachedAt < CACHE_TTL_MS;
+
+    if (!metadata || !isCacheFresh) {
+        const octokit = await getOctokit();
+        const { data } = await octokit.repos.getReleaseAsset({
+            owner: GITHUB_OWNER,
+            repo: GITHUB_REPO,
+            asset_id: assetIdNum
+        });
+        metadata = data;
+        assetMetaCache.set(assetIdNum, { data: metadata, fetchedAt: Date.now() });
+    }
 
     // Stream the asset directly from GitHub to the client (no buffering in memory)
     const ghResponse = await axios({
@@ -658,7 +670,8 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         res.setHeader('Content-Length', metadata.size);
     }
     res.setHeader('Content-Disposition', `inline; filename="${metadata.name || 'document.pdf'}"`);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    // Allow browser + CDN caching for a day to improve PDF load speed
+    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
 
     await pipeline(ghResponse.data, res);
 }));
