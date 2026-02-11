@@ -3,7 +3,11 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-require('dotenv').config();
+
+// Load environment variables from backend/.env when running locally.
+// Vercel injects env vars directly, so this is a no-op in production.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config(); // fallback to project root or already-set env vars
 const { supabaseConfig, requireSupabase } = require('./lib/supabase');
 
 // Import routes
@@ -56,6 +60,14 @@ const allowedOrigins = (process.env.CORS_ORIGIN
         'http://[::]:8080'
     ]
 ).map(origin => origin.trim());
+
+// Auto-allow the current Vercel deployment URL without needing to hardcode it
+if (process.env.VERCEL_URL) {
+    const vercelOrigin = `https://${process.env.VERCEL_URL}`;
+    if (!allowedOrigins.includes(vercelOrigin)) {
+        allowedOrigins.push(vercelOrigin);
+    }
+}
 
 function isAllowedOrigin(origin) {
     if (!origin) return true; // allow same-origin or non-browser clients
@@ -124,6 +136,23 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         environment: process.env.NODE_ENV
+    });
+});
+
+// Quick env check (safe: only shows presence, not values)
+app.get('/api/env-check', (req, res) => {
+    res.json({
+        timestamp: new Date().toISOString(),
+        vercel: Boolean(process.env.VERCEL),
+        nodeEnv: process.env.NODE_ENV || 'not set',
+        envVars: {
+            SUPABASE_URL: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.substring(0, 30)}...` : 'NOT SET',
+            SUPABASE_SERVICE_ROLE: process.env.SUPABASE_SERVICE_ROLE ? `present (${process.env.SUPABASE_SERVICE_ROLE.substring(0, 20)}...)` : 'NOT SET',
+            SUPABASE_KEY: process.env.SUPABASE_KEY ? `present (${process.env.SUPABASE_KEY.substring(0, 20)}...)` : 'NOT SET',
+            GITHUB_TOKEN: process.env.GITHUB_TOKEN ? 'present' : 'NOT SET',
+            JWT_SECRET: process.env.JWT_SECRET ? 'present' : 'NOT SET',
+        },
+        supabaseConfig: requireSupabase ? supabaseConfig : 'not loaded'
     });
 });
 

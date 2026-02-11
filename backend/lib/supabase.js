@@ -32,13 +32,17 @@ const supabaseConfig = {
     hasAnonKey: Boolean(SUPABASE_ANON_KEY),
     hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE),
     effectiveKeyRole: decodeJwtRole(key),
+    urlPreview: SUPABASE_URL ? `${SUPABASE_URL.substring(0, 30)}...` : null,
+    keyPreview: key ? `${key.substring(0, 20)}...` : null,
 };
 
+console.log('🔍 [Supabase] Config Check:', JSON.stringify(supabaseConfig, null, 2));
+
 if (!supabaseConfig.hasUrl) {
-    console.warn('⚠️  SUPABASE_URL is not set. Supabase client will not function correctly.');
+    console.error('⚠️  SUPABASE_URL is not set. Supabase client will not function correctly.');
 }
 if (!supabaseConfig.hasAnonKey && !supabaseConfig.hasServiceRoleKey) {
-    console.warn('⚠️  SUPABASE_KEY/SUPABASE_SERVICE_ROLE is not set. Supabase client will not function correctly.');
+    console.error('⚠️  SUPABASE_KEY/SUPABASE_SERVICE_ROLE is not set. Supabase client will not function correctly.');
 }
 if (!supabaseConfig.hasServiceRoleKey) {
     console.warn('ℹ️  Using anon key (SUPABASE_KEY). For privileged server access, set SUPABASE_SERVICE_ROLE.');

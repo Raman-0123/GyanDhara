@@ -11,7 +11,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { requireSupabase, supabaseConfig } = require('../lib/supabase');
+const { supabase, supabaseConfig, requireSupabase } = require('../lib/supabase');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
