@@ -10,6 +10,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { pipeline } = require('stream/promises');
 const { supabase, supabaseConfig, requireSupabase } = require('../lib/supabase');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
@@ -637,20 +638,29 @@ router.get('/asset/:assetId', asyncHandler(async (req, res) => {
         asset_id: assetIdNum
     });
 
-    const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/assets/{asset_id}', {
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPO,
-        asset_id: assetIdNum,
-        headers: { accept: 'application/octet-stream' },
-        responseType: 'arraybuffer'
+    // Stream the asset directly from GitHub to the client (no buffering in memory)
+    const ghResponse = await axios({
+        url: metadata.url,
+        method: 'GET',
+        responseType: 'stream',
+        headers: {
+            Accept: 'application/octet-stream',
+            Authorization: GITHUB_TOKEN ? `token ${GITHUB_TOKEN}` : undefined,
+            'User-Agent': 'GyanDhara-PDF-Proxy'
+        },
+        maxRedirects: 5,
+        maxBodyLength: Infinity,
+        timeout: 0
     });
 
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-
-    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Type', metadata.content_type || 'application/pdf');
+    if (metadata.size) {
+        res.setHeader('Content-Length', metadata.size);
+    }
     res.setHeader('Content-Disposition', `inline; filename="${metadata.name || 'document.pdf'}"`);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.send(buffer);
+
+    await pipeline(ghResponse.data, res);
 }));
 
 /**

@@ -30,6 +30,11 @@ const PORT = process.env.PORT || 3000;
 const IS_VERCEL = Boolean(process.env.VERCEL);
 let server = null;
 
+// Behind Vercel/other proxies, trust X-Forwarded-* so rate limiting sees real client IPs.
+if (IS_VERCEL) {
+    app.set('trust proxy', 1);
+}
+
 // Vercel rewrites can drop the "/api" prefix before requests hit Express.
 // Normalize the path so existing routes keep working in all environments.
 if (IS_VERCEL) {

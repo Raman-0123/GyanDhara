@@ -228,15 +228,17 @@ router.put('/:id', upload.fields([
     // Handle new PDF upload
     if (req.files && req.files.pdf && req.files.pdf[0]) {
         const pdfFile = req.files.pdf[0];
-        updateData.pdf_url = `/uploads/books/${pdfFile.filename}`;
-        updateData.pdf_filename = pdfFile.originalname;
-        updateData.file_size_bytes = pdfFile.size;
+        const { publicUrl, size, originalname } = await uploadToStorage(pdfFile, 'books/pdfs');
+        updateData.pdf_url = publicUrl;
+        updateData.pdf_filename = originalname;
+        updateData.file_size_bytes = size;
     }
 
     // Handle new cover image
     if (req.files && req.files.cover_image && req.files.cover_image[0]) {
         const coverFile = req.files.cover_image[0];
-        updateData.cover_image_url = `/uploads/books/${coverFile.filename}`;
+        const { publicUrl } = await uploadToStorage(coverFile, 'books/covers');
+        updateData.cover_image_url = publicUrl;
     }
 
     const { data: book, error } = await supabase
