@@ -57,7 +57,9 @@ const allowedOrigins = (process.env.CORS_ORIGIN
         'http://[::1]:5174',
         'http://[::1]:5175',
         'http://[::1]:8080',
-        'http://[::]:8080'
+        'http://[::]:8080',
+        // Production domains
+        'https://gyan-dhara-lms.vercel.app'
     ]
 ).map(origin => origin.trim());
 
@@ -72,6 +74,11 @@ if (process.env.VERCEL_URL) {
 function isAllowedOrigin(origin) {
     if (!origin) return true; // allow same-origin or non-browser clients
     if (allowedOrigins.includes(origin)) return true;
+
+    // Allow any Vercel preview for this project
+    if (origin.endsWith('.vercel.app') && origin.includes('gyan-dhara')) {
+        return true;
+    }
 
     // Check for any localhost/IPv6 format before URL parsing
     if (origin.includes('localhost') ||
