@@ -14,7 +14,22 @@ const { supabaseConfig, requireSupabase } = require('./lib/supabase');
 const topicRoutes = require('./routes/topics');
 const userRoutes = require('./routes/user');
 const githubRoutes = require('./routes/github');
-const githubReleasesRoutes = require('./routes/github-releases');
+// Guard against a bad merge/syntax error taking down the whole API on Vercel.
+// If this route fails to load, we still boot other endpoints (topics/auth/etc).
+let githubReleasesRoutes;
+try {
+    githubReleasesRoutes = require('./routes/github-releases');
+} catch (err) {
+    console.error('⚠️  Failed to load github-releases routes. Continuing without them.', err);
+    githubReleasesRoutes = express.Router();
+    githubReleasesRoutes.use((_req, res) => {
+        res.status(500).json({
+            success: false,
+            error: 'github_releases_routes_failed_to_load',
+            message: 'GitHub Releases routes failed to load on the server.',
+        });
+    });
+}
 const uploadRoutes = require('./routes/upload');
 const quizRoutes = require('./routes/quiz');
 const ratingsRoutes = require('./routes/ratings');
@@ -222,7 +237,15 @@ app.get('/api/diag/supabase', async (req, res) => {
 
 // Very small sanity endpoint to confirm function boots
 app.get('/api/diag/ping', (_req, res) => {
-    res.json({ ok: true, timestamp: Date.now(), vercel: Boolean(process.env.VERCEL) });
+    res.json({
+        ok: true,
+        timestamp: Date.now(),
+        vercel: Boolean(process.env.VERCEL),
+        git: {
+            sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
+            ref: process.env.VERCEL_GIT_COMMIT_REF || null,
+        },
+    });
 });
 
 // API Routes
